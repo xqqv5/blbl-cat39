@@ -10,7 +10,9 @@
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:layout_margin="10dp"
-        android:background="@android:color/transparent"
+        android:background="@drawable/blbl_focus_bg_round"
+        android:focusable="true"
+        android:padding="4dp"
         android:src="@drawable/ic_back"
         android:tint="@color/blbl_text"
         app:layout_constraintStart_toStartOf="parent"
@@ -32,6 +34,7 @@
         android:layout_width="220dp"
         android:layout_height="0dp"
         android:layout_marginTop="8dp"
+        android:clipChildren="false"
         android:clipToPadding="false"
         android:paddingBottom="12dp"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -44,6 +47,7 @@
         android:layout_height="0dp"
         android:layout_marginStart="12dp"
         android:layout_marginTop="8dp"
+        android:clipChildren="false"
         android:clipToPadding="false"
         android:padding="12dp"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -52,4 +56,3 @@
         app:layout_constraintTop_toBottomOf="@id/btn_back" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-

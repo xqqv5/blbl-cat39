@@ -2,6 +2,7 @@ package blbl.cat3399.ui
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -9,6 +10,7 @@ import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.databinding.ActivityMainBinding
 import blbl.cat3399.feature.category.CategoryFragment
@@ -27,6 +29,7 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+        applyUiMode()
 
         binding.btnSidebarLogin.setOnClickListener { openQrLogin() }
         binding.ivSidebarUser.setOnClickListener {
@@ -68,12 +71,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyUiMode()
+        ensureInitialFocus()
         refreshSidebarUser()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && currentFocus == null && isNavKey(event.keyCode)) {
+            ensureInitialFocus()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun showRoot(fragment: androidx.fragment.app.Fragment): Boolean {
@@ -116,5 +129,55 @@ class MainActivity : AppCompatActivity() {
     private fun showLoggedOut() {
         binding.ivSidebarUser.visibility = android.view.View.GONE
         binding.btnSidebarLogin.visibility = android.view.View.VISIBLE
+    }
+
+    private fun applyUiMode() {
+        val tvMode = TvMode.isEnabled(this)
+        if (::navAdapter.isInitialized) navAdapter.setShowLabelsAlways(tvMode)
+
+        val widthDp = if (tvMode) 160f else 48f
+        val widthPx = dp(widthDp)
+        val lp = binding.sidebar.layoutParams
+        if (lp.width != widthPx) {
+            lp.width = widthPx
+            binding.sidebar.layoutParams = lp
+        }
+    }
+
+    private fun ensureInitialFocus() {
+        if (currentFocus != null) return
+        val pos = navAdapter.selectedAdapterPosition().takeIf { it >= 0 } ?: 0
+        binding.recyclerSidebar.post {
+            val vh = binding.recyclerSidebar.findViewHolderForAdapterPosition(pos)
+            if (vh != null) {
+                vh.itemView.requestFocus()
+                return@post
+            }
+            binding.recyclerSidebar.scrollToPosition(pos)
+            binding.recyclerSidebar.post {
+                binding.recyclerSidebar.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
+            }
+        }
+    }
+
+    private fun dp(valueDp: Float): Int {
+        val dm = resources.displayMetrics
+        return (valueDp * dm.density).toInt()
+    }
+
+    private fun isNavKey(keyCode: Int): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_TAB,
+            -> true
+
+            else -> false
+        }
     }
 }

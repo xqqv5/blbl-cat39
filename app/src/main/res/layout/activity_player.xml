@@ -41,7 +41,9 @@
             android:id="@+id/btn_back"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:background="@android:color/transparent"
+            android:background="@drawable/blbl_focus_bg_round"
+            android:focusable="true"
+            android:padding="4dp"
             android:src="@drawable/ic_back"
             android:tint="@color/blbl_text"
             app:layout_constraintBottom_toBottomOf="parent"
@@ -66,7 +68,9 @@
             android:id="@+id/btn_settings"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:background="@android:color/transparent"
+            android:background="@drawable/blbl_focus_bg_round"
+            android:focusable="true"
+            android:padding="4dp"
             android:src="@drawable/ic_settings"
             android:tint="@color/blbl_text"
             android:visibility="gone"
@@ -119,8 +123,10 @@
                 android:id="@+id/btn_play_pause"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
-                android:background="@android:color/transparent"
+                android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
+                android:focusable="true"
+                android:padding="4dp"
                 android:src="@drawable/ic_player_play"
                 android:tint="@color/blbl_text" />
 
@@ -128,8 +134,10 @@
                 android:id="@+id/btn_rew"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
-                android:background="@android:color/transparent"
+                android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
+                android:focusable="true"
+                android:padding="4dp"
                 android:src="@drawable/ic_player_rewind"
                 android:tint="@color/blbl_text" />
 
@@ -137,8 +145,10 @@
                 android:id="@+id/btn_ffwd"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
-                android:background="@android:color/transparent"
+                android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
+                android:focusable="true"
+                android:padding="4dp"
                 android:src="@drawable/ic_player_fastforward"
                 android:tint="@color/blbl_text" />
 
@@ -146,8 +156,10 @@
                 android:id="@+id/btn_subtitle"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
-                android:background="@android:color/transparent"
+                android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
+                android:focusable="true"
+                android:padding="4dp"
                 android:src="@drawable/ic_player_subtitle"
                 android:tint="@color/blbl_text" />
 
@@ -155,8 +167,10 @@
                 android:id="@+id/btn_danmaku"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
-                android:background="@android:color/transparent"
+                android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
+                android:focusable="true"
+                android:padding="4dp"
                 android:src="@drawable/ic_player_danmaku"
                 android:tint="@color/blbl_text" />
 
@@ -164,8 +178,10 @@
                 android:id="@+id/btn_advanced"
                 android:layout_width="32dp"
                 android:layout_height="32dp"
-                android:background="@android:color/transparent"
+                android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
+                android:focusable="true"
+                android:padding="4dp"
                 android:src="@drawable/ic_settings"
                 android:tint="@color/blbl_text" />
         </LinearLayout>
@@ -200,6 +216,21 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/top_bar" />
 
+    <TextView
+        android:id="@+id/tv_seek_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="14dp"
+        android:layout_marginBottom="14dp"
+        android:background="#66000000"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:textColor="@color/blbl_text"
+        android:textSize="16sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/player_view"
+        app:layout_constraintStart_toStartOf="@id/player_view" />
+
     <FrameLayout
         android:id="@+id/settings_panel"
         android:layout_width="320dp"
@@ -214,6 +245,7 @@
             android:id="@+id/recycler_settings"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:clipChildren="false"
             android:padding="16dp" />
     </FrameLayout>
 

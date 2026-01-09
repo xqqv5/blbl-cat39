@@ -21,11 +21,18 @@ class SidebarNavAdapter(
 
     private val items = ArrayList<NavItem>()
     private var selectedId: Int = ID_HOME
+    private var showLabelsAlways: Boolean = false
 
     fun submit(list: List<NavItem>, selectedId: Int) {
         items.clear()
         items.addAll(list)
         this.selectedId = selectedId
+        notifyDataSetChanged()
+    }
+
+    fun setShowLabelsAlways(enabled: Boolean) {
+        if (showLabelsAlways == enabled) return
+        showLabelsAlways = enabled
         notifyDataSetChanged()
     }
 
@@ -35,6 +42,8 @@ class SidebarNavAdapter(
         if (trigger) items.firstOrNull { it.id == id }?.let { onClick(it) }
     }
 
+    fun selectedAdapterPosition(): Int = items.indexOfFirst { it.id == selectedId }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {
         val binding = ItemSidebarNavBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return Vh(binding)
@@ -43,7 +52,7 @@ class SidebarNavAdapter(
     override fun onBindViewHolder(holder: Vh, position: Int) {
         val item = items[position]
         val selected = item.id == selectedId
-        holder.bind(item, selected) {
+        holder.bind(item, selected, showLabelsAlways) {
             val handled = onClick(item)
             if (handled) select(item.id, trigger = false)
         }
@@ -52,17 +61,23 @@ class SidebarNavAdapter(
     override fun getItemCount(): Int = items.size
 
     class Vh(private val binding: ItemSidebarNavBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(item: NavItem, selected: Boolean, onClick: () -> Unit) {
+        fun bind(item: NavItem, selected: Boolean, showLabelsAlways: Boolean, onClick: () -> Unit) {
             binding.ivIcon.setImageResource(item.iconRes)
             binding.tvLabel.text = item.title
-            binding.tvLabel.visibility = if (selected) View.VISIBLE else View.GONE
+            binding.tvLabel.visibility = if (showLabelsAlways || selected) View.VISIBLE else View.GONE
             binding.card.setCardBackgroundColor(
                 if (selected) ContextCompat.getColor(binding.root.context, R.color.blbl_surface) else 0x00000000,
             )
+            binding.card.isSelected = selected
             val iconTint = if (selected) R.color.blbl_purple else R.color.blbl_text_secondary
             binding.ivIcon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(binding.root.context, iconTint))
 
-            val heightDp = if (selected) 56f else 32f
+            val heightDp =
+                when {
+                    showLabelsAlways -> 52f
+                    selected -> 56f
+                    else -> 32f
+                }
             val lp = binding.card.layoutParams
             lp.height = dp(binding.root, heightDp)
             binding.card.layoutParams = lp

@@ -2,6 +2,7 @@ package blbl.cat3399.feature.login
 
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.core.log.AppLog
@@ -40,6 +41,21 @@ class QrLoginActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && currentFocus == null && isNavKey(event.keyCode)) {
+            binding.btnRefresh.post { binding.btnRefresh.requestFocus() }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (currentFocus == null) {
+            binding.btnRefresh.post { binding.btnRefresh.requestFocus() }
+        }
     }
 
     override fun onDestroy() {
@@ -116,5 +132,21 @@ class QrLoginActivity : AppCompatActivity() {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         bmp.setPixels(pixels, 0, size, 0, 0, size, size)
         return bmp
+    }
+
+    private fun isNavKey(keyCode: Int): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_TAB,
+            -> true
+
+            else -> false
+        }
     }
 }

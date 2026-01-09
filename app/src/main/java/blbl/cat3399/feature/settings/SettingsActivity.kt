@@ -3,6 +3,7 @@ package blbl.cat3399.feature.settings
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.KeyEvent
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -11,6 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.databinding.ActivitySettingsBinding
 import java.util.Locale
@@ -35,6 +37,7 @@ class SettingsActivity : AppCompatActivity() {
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
         Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+        applyUiMode()
 
         binding.btnBack.setOnClickListener { finish() }
 
@@ -50,9 +53,62 @@ class SettingsActivity : AppCompatActivity() {
         showSection(0)
     }
 
+    override fun onResume() {
+        super.onResume()
+        applyUiMode()
+        ensureInitialFocus()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && currentFocus == null && isNavKey(event.keyCode)) {
+            ensureInitialFocus()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun applyUiMode() {
+        val tvMode = TvMode.isEnabled(this)
+        val widthDp = if (tvMode) 320f else 220f
+        val widthPx = dp(widthDp)
+        val lp = binding.recyclerLeft.layoutParams
+        if (lp.width != widthPx) {
+            lp.width = widthPx
+            binding.recyclerLeft.layoutParams = lp
+        }
+    }
+
+    private fun ensureInitialFocus() {
+        if (currentFocus != null) return
+        binding.recyclerLeft.post {
+            binding.recyclerLeft.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+        }
+    }
+
+    private fun dp(valueDp: Float): Int {
+        val dm = resources.displayMetrics
+        return (valueDp * dm.density).toInt()
+    }
+
+    private fun isNavKey(keyCode: Int): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_TAB,
+            -> true
+
+            else -> false
+        }
     }
 
     private fun showSection(index: Int, keepScroll: Boolean = index == currentSectionIndex) {
@@ -77,6 +133,7 @@ class SettingsActivity : AppCompatActivity() {
             "页面设置" -> listOf(
                 SettingEntry("每行卡片数量", gridSpanText(prefs.gridSpanCount), "影响推荐/热门/分类（动态单独设置）"),
                 SettingEntry("动态页每行卡片数量", gridSpanText(prefs.dynamicGridSpanCount), "默认 3"),
+                SettingEntry("TV 模式", tvModeText(prefs.uiMode), "优化遥控器/键盘导航与焦点样式"),
                 SettingEntry("以全屏模式运行", if (prefs.fullscreenEnabled) "开" else "关", "隐藏状态栏/导航栏"),
             )
 
@@ -85,6 +142,7 @@ class SettingsActivity : AppCompatActivity() {
                 SettingEntry("默认音轨", audioText(prefs.playerPreferredAudioId), "30280/30232/30216"),
                 SettingEntry("默认播放速度", String.format(Locale.US, "%.2fx", prefs.playerSpeed), null),
                 SettingEntry("字幕语言", subtitleLangText(prefs.subtitlePreferredLang), "自动/优先匹配"),
+                SettingEntry("默认开启字幕", if (prefs.subtitleEnabledDefault) "开" else "关", "进入播放页时默认状态"),
                 SettingEntry("视频编码", prefs.playerPreferredCodec, "AVC/HEVC/AV1"),
                 SettingEntry("显示视频调试信息", if (prefs.playerDebugEnabled) "开" else "关", "播放器左上角调试框"),
             )
@@ -148,6 +206,24 @@ class SettingsActivity : AppCompatActivity() {
                 showSection(currentSectionIndex)
             }
 
+            "TV 模式" -> {
+                val options = listOf("自动", "开", "关")
+                showChoiceDialog(
+                    title = "TV 模式",
+                    items = options,
+                    current = tvModeText(prefs.uiMode),
+                ) { selected ->
+                    prefs.uiMode =
+                        when (selected) {
+                            "开" -> blbl.cat3399.core.prefs.AppPrefs.UI_MODE_TV
+                            "关" -> blbl.cat3399.core.prefs.AppPrefs.UI_MODE_NORMAL
+                            else -> blbl.cat3399.core.prefs.AppPrefs.UI_MODE_AUTO
+                        }
+                    Toast.makeText(this, "TV 模式：$selected", Toast.LENGTH_SHORT).show()
+                    recreate()
+                }
+            }
+
             "每行卡片数量" -> {
                 val options = listOf("自动", "1", "2", "3", "4", "5", "6")
                 showChoiceDialog(
@@ -177,6 +253,12 @@ class SettingsActivity : AppCompatActivity() {
             "弹幕开关" -> {
                 prefs.danmakuEnabled = !prefs.danmakuEnabled
                 Toast.makeText(this, "弹幕：${if (prefs.danmakuEnabled) "开" else "关"}", Toast.LENGTH_SHORT).show()
+                showSection(currentSectionIndex)
+            }
+
+            "默认开启字幕" -> {
+                prefs.subtitleEnabledDefault = !prefs.subtitleEnabledDefault
+                Toast.makeText(this, "默认字幕：${if (prefs.subtitleEnabledDefault) "开" else "关"}", Toast.LENGTH_SHORT).show()
                 showSection(currentSectionIndex)
             }
 
@@ -442,4 +524,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun aiLevelText(level: Int): String = if (level == 0) "默认(3)" else level.coerceIn(1, 10).toString()
 
     private fun gridSpanText(span: Int): String = if (span <= 0) "自动" else span.toString()
+
+    private fun tvModeText(mode: String): String = when (mode) {
+        blbl.cat3399.core.prefs.AppPrefs.UI_MODE_TV -> "开"
+        blbl.cat3399.core.prefs.AppPrefs.UI_MODE_NORMAL -> "关"
+        else -> "自动"
+    }
 }

@@ -5,6 +5,10 @@ import android.content.Context
 class AppPrefs(context: Context) {
     private val prefs = context.getSharedPreferences("blbl_prefs", Context.MODE_PRIVATE)
 
+    var uiMode: String
+        get() = prefs.getString(KEY_UI_MODE, UI_MODE_AUTO) ?: UI_MODE_AUTO
+        set(value) = prefs.edit().putString(KEY_UI_MODE, value).apply()
+
     var userAgent: String
         get() = prefs.getString(KEY_UA, DEFAULT_UA) ?: DEFAULT_UA
         set(value) = prefs.edit().putString(KEY_UA, value).apply()
@@ -81,6 +85,10 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_SUBTITLE_LANG, "auto") ?: "auto"
         set(value) = prefs.edit().putString(KEY_SUBTITLE_LANG, value).apply()
 
+    var subtitleEnabledDefault: Boolean
+        get() = prefs.getBoolean(KEY_SUBTITLE_ENABLED_DEFAULT, false)
+        set(value) = prefs.edit().putBoolean(KEY_SUBTITLE_ENABLED_DEFAULT, value).apply()
+
     var playerSpeed: Float
         get() = prefs.getFloat(KEY_PLAYER_SPEED, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_PLAYER_SPEED, value).apply()
@@ -102,7 +110,12 @@ class AppPrefs(context: Context) {
         set(value) = prefs.edit().putInt(KEY_DYNAMIC_GRID_SPAN, value).apply()
 
     companion object {
+        const val UI_MODE_AUTO = "auto"
+        const val UI_MODE_TV = "tv"
+        const val UI_MODE_NORMAL = "normal"
+
         private const val KEY_UA = "ua"
+        private const val KEY_UI_MODE = "ui_mode"
         private const val KEY_IMAGE_QUALITY = "image_quality"
         private const val KEY_DANMAKU_ENABLED = "danmaku_enabled"
         private const val KEY_DANMAKU_ALLOW_TOP = "danmaku_allow_top"
@@ -121,6 +134,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_CODEC = "player_codec"
         private const val KEY_PLAYER_AUDIO_ID = "player_audio_id"
         private const val KEY_SUBTITLE_LANG = "subtitle_lang"
+        private const val KEY_SUBTITLE_ENABLED_DEFAULT = "subtitle_enabled_default"
         private const val KEY_PLAYER_SPEED = "player_speed"
         private const val KEY_FULLSCREEN = "fullscreen_enabled"
         private const val KEY_PLAYER_DEBUG = "player_debug_enabled"

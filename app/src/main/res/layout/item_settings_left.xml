@@ -5,8 +5,13 @@
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="10dp"
     android:layout_marginVertical="8dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:stateListAnimator="@animator/blbl_focus_scale"
     app:cardBackgroundColor="@color/blbl_surface"
-    app:cardCornerRadius="12dp">
+    app:cardCornerRadius="12dp"
+    app:strokeColor="@color/blbl_focus_stroke"
+    app:strokeWidth="2dp">
 
     <TextView
         android:id="@+id/tv_title"
@@ -16,4 +21,3 @@
         android:textColor="@color/blbl_text"
         android:textSize="15sp" />
 </com.google.android.material.card.MaterialCardView>
-

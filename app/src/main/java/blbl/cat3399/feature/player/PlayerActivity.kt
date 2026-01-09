@@ -2,6 +2,10 @@ package blbl.cat3399.feature.player
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.GestureDetector
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.SeekBar
 import android.widget.Toast
@@ -47,8 +51,20 @@ class PlayerActivity : AppCompatActivity() {
     private var debugJob: kotlinx.coroutines.Job? = null
     private var progressJob: kotlinx.coroutines.Job? = null
     private var autoHideJob: kotlinx.coroutines.Job? = null
+    private var holdSeekJob: kotlinx.coroutines.Job? = null
+    private var seekHintJob: kotlinx.coroutines.Job? = null
+    private var keyScrubEndJob: kotlinx.coroutines.Job? = null
     private var scrubbing: Boolean = false
     private var controlsVisible: Boolean = false
+    private var lastInteractionAtMs: Long = 0L
+    private var lastBackAtMs: Long = 0L
+    private var holdPrevSpeed: Float = 1.0f
+    private var holdPrevPlayWhenReady: Boolean = false
+
+    private var smartSeekDirection: Int = 0
+    private var smartSeekStreak: Int = 0
+    private var smartSeekLastAtMs: Long = 0L
+    private var smartSeekTotalMs: Long = 0L
 
     private var currentBvid: String = ""
     private var currentCid: Long = -1L
@@ -65,6 +81,7 @@ class PlayerActivity : AppCompatActivity() {
 
         binding.topBar.visibility = View.GONE
         binding.bottomBar.visibility = View.GONE
+        binding.tvSeekHint.visibility = View.GONE
         binding.btnBack.setOnClickListener { finish() }
 
         val bvid = intent.getStringExtra(EXTRA_BVID).orEmpty()
@@ -81,6 +98,7 @@ class PlayerActivity : AppCompatActivity() {
             playbackSpeed = prefs.playerSpeed,
             preferCodec = prefs.playerPreferredCodec,
             preferAudioId = prefs.playerPreferredAudioId,
+            subtitleEnabled = prefs.subtitleEnabledDefault,
             subtitleLangOverride = null,
             danmaku = DanmakuSessionSettings(
                 enabled = prefs.danmakuEnabled,
@@ -100,8 +118,8 @@ class PlayerActivity : AppCompatActivity() {
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
         configureSubtitleView()
         exo.setPlaybackSpeed(session.playbackSpeed)
-        // Default: subtitle OFF; enable via subtitle toggle.
-        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+        // Subtitle enabled state follows session (default from global prefs).
+        applySubtitleEnabled(exo)
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 AppLog.e("Player", "onPlayerError", error)
@@ -163,6 +181,7 @@ class PlayerActivity : AppCompatActivity() {
                 subtitleConfig = subJob.await()
                 subtitleAvailable = subtitleConfig != null
                 (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+                applySubtitleEnabled(exo)
                 when (playable) {
                     is Playable.Dash -> {
                         AppLog.i("Player", "picked DASH video=${playable.videoUrl.take(40)} audio=${playable.audioUrl.take(40)}")
@@ -175,7 +194,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 exo.prepare()
                 exo.playWhenReady = true
-                updateSubtitleButton(exo)
+                updateSubtitleButton()
 
                 val danmakus = dmJob.await()
                 binding.danmakuView.setDanmakus(danmakus)
@@ -191,6 +210,124 @@ class PlayerActivity : AppCompatActivity() {
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+
+        if (event.action == KeyEvent.ACTION_UP) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (holdSeekJob != null) {
+                    stopHoldSeek()
+                    return true
+                }
+            }
+            return super.dispatchKeyEvent(event)
+        }
+
+        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
+
+        if (isInteractionKey(keyCode)) noteUserInteraction()
+
+        when (keyCode) {
+            KeyEvent.KEYCODE_MENU -> {
+                if (binding.settingsPanel.visibility == View.VISIBLE) return true
+                setControlsVisible(true)
+                focusFirstControl()
+                return true
+            }
+
+            KeyEvent.KEYCODE_BACK -> {
+                if (binding.settingsPanel.visibility == View.VISIBLE) {
+                    binding.settingsPanel.visibility = View.GONE
+                    setControlsVisible(true)
+                    focusFirstControl()
+                    return true
+                }
+                return handleBackExitOrDismiss()
+            }
+
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                setControlsVisible(true)
+                if (!binding.seekProgress.isFocused) {
+                    focusSeekBar()
+                    return true
+                }
+            }
+
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (binding.seekProgress.isFocused) {
+                    setControlsVisible(true)
+                    focusFirstControl()
+                    return true
+                }
+                if (!controlsVisible) {
+                    setControlsVisible(true)
+                    focusFirstControl()
+                    return true
+                }
+            }
+
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            -> {
+                if (binding.settingsPanel.visibility != View.VISIBLE && !hasControlsFocus()) {
+                    setControlsVisible(true)
+                    focusFirstControl()
+                    return true
+                }
+                if (!controlsVisible && binding.settingsPanel.visibility != View.VISIBLE) {
+                    setControlsVisible(true)
+                    focusFirstControl()
+                    return true
+                }
+            }
+
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            -> {
+                binding.btnPlayPause.performClick()
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            -> {
+                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (binding.seekProgress.isFocused) return super.dispatchKeyEvent(event)
+                if (binding.topBar.hasFocus() || binding.bottomBar.hasFocus()) return super.dispatchKeyEvent(event)
+
+                if (event.repeatCount > 0) {
+                    startHoldSeek(direction = -1, showControls = false)
+                    return true
+                }
+
+                smartSeek(direction = -1, showControls = false, hintKind = SeekHintKind.Step)
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            -> {
+                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (binding.seekProgress.isFocused) return super.dispatchKeyEvent(event)
+                if (binding.topBar.hasFocus() || binding.bottomBar.hasFocus()) return super.dispatchKeyEvent(event)
+
+                if (event.repeatCount > 0) {
+                    startHoldSeek(direction = +1, showControls = false)
+                    return true
+                }
+
+                smartSeek(direction = +1, showControls = false, hintKind = SeekHintKind.Step)
+                return true
+            }
+        }
+
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onStop() {
         super.onStop()
         player?.pause()
@@ -200,13 +337,49 @@ class PlayerActivity : AppCompatActivity() {
         debugJob?.cancel()
         progressJob?.cancel()
         autoHideJob?.cancel()
+        holdSeekJob?.cancel()
+        seekHintJob?.cancel()
+        keyScrubEndJob?.cancel()
         player?.release()
         player = null
         super.onDestroy()
     }
 
     private fun initControls(exo: ExoPlayer) {
-        binding.playerView.setOnClickListener { toggleControls() }
+        val detector =
+            GestureDetector(
+                this,
+                object : GestureDetector.SimpleOnGestureListener() {
+                    override fun onDown(e: MotionEvent): Boolean = true
+
+                    override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                        val w = binding.playerView.width.toFloat()
+                        if (w <= 0f) return false
+                        val x = e.x
+                        return when {
+                            x < w * EDGE_TAP_THRESHOLD -> {
+                                smartSeek(direction = -1, showControls = false, hintKind = SeekHintKind.Step)
+                                true
+                            }
+
+                            x > w * (1f - EDGE_TAP_THRESHOLD) -> {
+                                smartSeek(direction = +1, showControls = false, hintKind = SeekHintKind.Step)
+                                true
+                            }
+
+                            else -> {
+                                toggleControls()
+                                true
+                            }
+                        }
+                    }
+                },
+            )
+        binding.playerView.setOnTouchListener { v, event ->
+            val handled = detector.onTouchEvent(event)
+            if (event.action == MotionEvent.ACTION_UP && handled) v.performClick()
+            handled
+        }
 
         binding.btnAdvanced.setOnClickListener {
             val willShow = binding.settingsPanel.visibility != View.VISIBLE
@@ -219,13 +392,10 @@ class PlayerActivity : AppCompatActivity() {
             setControlsVisible(true)
         }
         binding.btnRew.setOnClickListener {
-            exo.seekTo((exo.currentPosition - 10_000L).coerceAtLeast(0L))
-            setControlsVisible(true)
+            smartSeek(direction = -1, showControls = true, hintKind = SeekHintKind.Step)
         }
         binding.btnFfwd.setOnClickListener {
-            val dur = exo.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-            exo.seekTo((exo.currentPosition + 10_000L).coerceAtMost(dur))
-            setControlsVisible(true)
+            smartSeek(direction = +1, showControls = true, hintKind = SeekHintKind.Step)
         }
 
         binding.btnDanmaku.setOnClickListener {
@@ -246,6 +416,14 @@ class PlayerActivity : AppCompatActivity() {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     if (!fromUser) return
                     scrubbing = true
+                    noteUserInteraction()
+                    scheduleKeyScrubEnd()
+
+                    if (binding.seekProgress.isFocused) {
+                        val duration = exo.duration.takeIf { it > 0 } ?: return
+                        val seekTo = duration * progress / SEEK_MAX
+                        exo.seekTo(seekTo)
+                    }
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
@@ -265,10 +443,17 @@ class PlayerActivity : AppCompatActivity() {
         )
 
         updatePlayPauseIcon(exo.isPlaying)
-        updateSubtitleButton(exo)
+        updateSubtitleButton()
         updateDanmakuButton()
         setControlsVisible(true)
         startProgressLoop()
+    }
+
+    private fun seekRelative(deltaMs: Long) {
+        val exo = player ?: return
+        val duration = exo.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+        val next = (exo.currentPosition + deltaMs).coerceIn(0L, duration)
+        exo.seekTo(next)
     }
 
     private fun startProgressLoop() {
@@ -292,7 +477,7 @@ class PlayerActivity : AppCompatActivity() {
         val show = visible || binding.settingsPanel.visibility == View.VISIBLE
         binding.topBar.visibility = if (show) View.VISIBLE else View.GONE
         binding.bottomBar.visibility = if (show) View.VISIBLE else View.GONE
-        restartAutoHideTimer()
+        if (visible) noteUserInteraction() else autoHideJob?.cancel()
     }
 
     private fun restartAutoHideTimer() {
@@ -302,9 +487,186 @@ class PlayerActivity : AppCompatActivity() {
         if (binding.settingsPanel.visibility == View.VISIBLE) return
         if (scrubbing) return
         if (!exo.isPlaying) return
+        val token = lastInteractionAtMs
         autoHideJob = lifecycleScope.launch {
-            delay(2_500)
+            delay(AUTO_HIDE_MS)
+            if (token != lastInteractionAtMs) return@launch
             setControlsVisible(false)
+        }
+    }
+
+    private fun noteUserInteraction() {
+        lastInteractionAtMs = SystemClock.uptimeMillis()
+        restartAutoHideTimer()
+    }
+
+    private fun scheduleKeyScrubEnd() {
+        keyScrubEndJob?.cancel()
+        keyScrubEndJob =
+            lifecycleScope.launch {
+                delay(KEY_SCRUB_END_DELAY_MS)
+                scrubbing = false
+                restartAutoHideTimer()
+            }
+    }
+
+    private fun hasControlsFocus(): Boolean =
+        binding.topBar.hasFocus() || binding.bottomBar.hasFocus() || binding.settingsPanel.hasFocus()
+
+    private fun focusFirstControl() {
+        binding.btnPlayPause.post { binding.btnPlayPause.requestFocus() }
+    }
+
+    private fun focusSeekBar() {
+        binding.seekProgress.post { binding.seekProgress.requestFocus() }
+    }
+
+    private fun handleBackExitOrDismiss(): Boolean {
+        val now = SystemClock.uptimeMillis()
+        val isSecond = now - lastBackAtMs <= BACK_DOUBLE_PRESS_WINDOW_MS
+        if (isSecond) {
+            finish()
+            return true
+        }
+        lastBackAtMs = now
+        Toast.makeText(this, "再按一次退出播放器", Toast.LENGTH_SHORT).show()
+        if (controlsVisible) setControlsVisible(false)
+        return true
+    }
+
+    private fun smartSeek(direction: Int) {
+        smartSeek(direction, showControls = true, hintKind = SeekHintKind.Step)
+    }
+
+    private enum class SeekHintKind {
+        Step,
+        Hold,
+    }
+
+    private fun smartSeek(direction: Int, showControls: Boolean, hintKind: SeekHintKind) {
+        val now = SystemClock.uptimeMillis()
+        val sameDir = direction == smartSeekDirection
+        val within = now - smartSeekLastAtMs <= SMART_SEEK_WINDOW_MS
+        val continued = sameDir && within
+        smartSeekStreak = if (continued) (smartSeekStreak + 1) else 1
+        smartSeekDirection = direction
+        smartSeekLastAtMs = now
+
+        if (showControls) {
+            if (!controlsVisible && binding.settingsPanel.visibility != View.VISIBLE) setControlsVisible(true) else noteUserInteraction()
+        } else {
+            noteUserInteraction()
+        }
+
+        val step = smartSeekStepMs(smartSeekStreak)
+        seekRelative(step * direction)
+        smartSeekTotalMs = if (continued) (smartSeekTotalMs + step) else step
+        if (hintKind == SeekHintKind.Step) showSeekStepHint(direction, smartSeekTotalMs)
+    }
+
+    private fun smartSeekStepMs(streak: Int): Long {
+        val baseStepsSec = intArrayOf(2, 3, 5, 7, 10, 15, 25, 35, 45)
+        val idx = (streak - 1).coerceAtLeast(0)
+        val sec =
+            if (idx < baseStepsSec.size) {
+                baseStepsSec[idx]
+            } else {
+                val extra = idx - (baseStepsSec.size - 1)
+                (baseStepsSec.last() + (10 * extra)).coerceAtMost(300)
+            }
+        return sec * 1000L
+    }
+
+    private fun startHoldSeek(direction: Int, showControls: Boolean) {
+        if (holdSeekJob?.isActive == true) return
+        val exo = player ?: return
+
+        if (showControls) {
+            if (!controlsVisible && binding.settingsPanel.visibility != View.VISIBLE) setControlsVisible(true) else noteUserInteraction()
+        } else {
+            noteUserInteraction()
+        }
+
+        holdPrevSpeed = exo.playbackParameters.speed
+        holdPrevPlayWhenReady = exo.playWhenReady
+        if (direction > 0) {
+            showSeekHoldHint(direction)
+            exo.setPlaybackSpeed(HOLD_SPEED)
+            exo.playWhenReady = true
+            holdSeekJob = lifecycleScope.launch { kotlinx.coroutines.awaitCancellation() }
+            return
+        }
+
+        // Rewind: ExoPlayer has no negative playback speed; do stepped rewind while paused.
+        showSeekHoldHint(direction)
+        exo.pause()
+        holdSeekJob =
+            lifecycleScope.launch {
+                while (isActive) {
+                    seekRelative(-HOLD_REWIND_STEP_MS)
+                    delay(HOLD_REWIND_TICK_MS)
+                }
+            }
+    }
+
+    private fun stopHoldSeek() {
+        val exo = player
+        holdSeekJob?.cancel()
+        holdSeekJob = null
+        if (exo != null) {
+            exo.setPlaybackSpeed(holdPrevSpeed)
+            exo.playWhenReady = holdPrevPlayWhenReady
+        }
+        scheduleHideSeekHint()
+    }
+
+    private fun showSeekStepHint(direction: Int, totalMs: Long) {
+        val sec = (kotlin.math.abs(totalMs) / 1000L).coerceAtLeast(1L)
+        val text = if (direction > 0) "快进 ${sec}s" else "后退 ${sec}s"
+        showSeekHint(text, hold = false)
+    }
+
+    private fun showSeekHoldHint(direction: Int) {
+        val text = if (direction > 0) "快进 x2" else "后退 x2"
+        showSeekHint(text, hold = true)
+    }
+
+    private fun showSeekHint(text: String, hold: Boolean) {
+        binding.tvSeekHint.text = text
+        binding.tvSeekHint.visibility = View.VISIBLE
+        seekHintJob?.cancel()
+        if (!hold) scheduleHideSeekHint()
+    }
+
+    private fun scheduleHideSeekHint() {
+        seekHintJob?.cancel()
+        seekHintJob =
+            lifecycleScope.launch {
+                delay(SEEK_HINT_HIDE_DELAY_MS)
+                binding.tvSeekHint.visibility = View.GONE
+            }
+    }
+
+    private fun isInteractionKey(keyCode: Int): Boolean {
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_SPACE,
+            KeyEvent.KEYCODE_BACK,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_MENU,
+            -> true
+
+            else -> false
         }
     }
 
@@ -334,13 +696,12 @@ class PlayerActivity : AppCompatActivity() {
         binding.btnDanmaku.imageTintList = ContextCompat.getColorStateList(this, colorRes)
     }
 
-    private fun updateSubtitleButton(exo: ExoPlayer) {
+    private fun updateSubtitleButton() {
         val colorRes =
             if (!subtitleAvailable) {
                 blbl.cat3399.R.color.blbl_text_secondary
             } else {
-                val disabled = exo.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
-                if (disabled) blbl.cat3399.R.color.blbl_text_secondary else blbl.cat3399.R.color.blbl_blue
+                if (session.subtitleEnabled) blbl.cat3399.R.color.blbl_blue else blbl.cat3399.R.color.blbl_text_secondary
             }
         binding.btnSubtitle.imageTintList = ContextCompat.getColorStateList(this, colorRes)
     }
@@ -350,10 +711,18 @@ class PlayerActivity : AppCompatActivity() {
             Toast.makeText(this, "该视频暂无字幕", Toast.LENGTH_SHORT).show()
             return
         }
-        val old = exo.trackSelectionParameters
-        val disabled = old.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
-        exo.trackSelectionParameters = old.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !disabled).build()
-        updateSubtitleButton(exo)
+        session = session.copy(subtitleEnabled = !session.subtitleEnabled)
+        applySubtitleEnabled(exo)
+        updateSubtitleButton()
+    }
+
+    private fun applySubtitleEnabled(exo: ExoPlayer) {
+        val disable = (!subtitleAvailable) || (!session.subtitleEnabled)
+        exo.trackSelectionParameters =
+            exo.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, disable)
+                .build()
     }
 
     private sealed interface Playable {
@@ -524,6 +893,7 @@ class PlayerActivity : AppCompatActivity() {
                     is Playable.Progressive -> exo.setMediaSource(buildProgressive(okHttpFactory, playable.url, subtitleConfig))
                 }
                 exo.prepare()
+                applySubtitleEnabled(exo)
                 if (keepPosition) exo.seekTo(pos)
                 exo.playWhenReady = true
             } catch (t: Throwable) {
@@ -793,8 +1163,9 @@ class PlayerActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     subtitleConfig = buildSubtitleConfigFromCurrentSelection(bvid = currentBvid, cid = currentCid)
                     subtitleAvailable = subtitleConfig != null
+                    applySubtitleEnabled(exo)
                     refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
-                    updateSubtitleButton(exo)
+                    updateSubtitleButton()
                     reloadStream(keepPosition = true)
                 }
             }
@@ -917,6 +1288,7 @@ class PlayerActivity : AppCompatActivity() {
         val playbackSpeed: Float,
         val preferCodec: String,
         val preferAudioId: Int,
+        val subtitleEnabled: Boolean,
         val subtitleLangOverride: String?,
         val danmaku: DanmakuSessionSettings,
         val debugEnabled: Boolean,
@@ -943,5 +1315,14 @@ class PlayerActivity : AppCompatActivity() {
         const val EXTRA_BVID = "bvid"
         const val EXTRA_CID = "cid"
         private const val SEEK_MAX = 10_000
+        private const val AUTO_HIDE_MS = 6_000L
+        private const val EDGE_TAP_THRESHOLD = 0.28f
+        private const val SMART_SEEK_WINDOW_MS = 900L
+        private const val HOLD_SPEED = 2.0f
+        private const val HOLD_REWIND_TICK_MS = 260L
+        private const val HOLD_REWIND_STEP_MS = 520L
+        private const val BACK_DOUBLE_PRESS_WINDOW_MS = 1_500L
+        private const val SEEK_HINT_HIDE_DELAY_MS = 900L
+        private const val KEY_SCRUB_END_DELAY_MS = 800L
     }
 }
