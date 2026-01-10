@@ -20,6 +20,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import kotlin.math.max
+import kotlin.math.min
 
 class QrLoginActivity : AppCompatActivity() {
     private lateinit var binding: ActivityQrLoginBinding
@@ -35,9 +37,12 @@ class QrLoginActivity : AppCompatActivity() {
         binding.btnClear.setOnClickListener {
             BiliClient.cookies.clearAll()
             binding.tvStatus.text = "已清除 Cookie（SESSDATA 等）"
+            binding.tvDebug.text = "cookie cleared"
         }
 
-        startFlow()
+        binding.tvStatus.text = "正在申请二维码..."
+        binding.tvDebug.text = ""
+        binding.ivQr.post { startFlow() }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -75,7 +80,8 @@ class QrLoginActivity : AppCompatActivity() {
                 val url = data.optString("url", "")
                 val key = data.optString("qrcode_key", "")
                 AppLog.i("QrLogin", "generate ok key=${key.take(6)}")
-                val qrSizePx = 500
+                val qrSizePx = targetQrSizePx()
+                binding.tvDebug.text = "key=${key.take(6)} size=$qrSizePx"
                 val bmp = withContext(Dispatchers.Default) { makeQr(url, qrSizePx) }
                 binding.ivQr.setImageBitmap(bmp)
                 binding.tvStatus.text = "请使用哔哩哔哩 App 扫码并确认登录"
@@ -83,19 +89,34 @@ class QrLoginActivity : AppCompatActivity() {
             } catch (t: Throwable) {
                 AppLog.e("QrLogin", "generate failed", t)
                 binding.tvStatus.text = "申请二维码失败：${t.message}"
+                binding.tvDebug.text = "gen err=${t.javaClass.simpleName}"
             }
         }
+    }
+
+    private fun targetQrSizePx(): Int {
+        val viewSize = min(binding.ivQr.width, binding.ivQr.height)
+        val paddingX = binding.ivQr.paddingLeft + binding.ivQr.paddingRight
+        val paddingY = binding.ivQr.paddingTop + binding.ivQr.paddingBottom
+        val padding = max(paddingX, paddingY)
+        val computed = (viewSize - padding).coerceAtLeast(1)
+        return if (viewSize > 0) computed.coerceIn(720, 1200) else 900
     }
 
     private fun poll(key: String): Job {
         return lifecycleScope.launch {
             val pollUrl = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=$key"
+            var lastCode = Int.MIN_VALUE
             while (isActive) {
                 try {
                     val json = BiliClient.getJson(pollUrl)
                     val data = json.optJSONObject("data") ?: JSONObject()
                     val code = data.optInt("code", -1)
                     val msg = data.optString("message", "")
+                    if (code != lastCode) {
+                        binding.tvDebug.text = "code=$code ${msg.trim()}"
+                        lastCode = code
+                    }
                     when (code) {
                         86101 -> binding.tvStatus.text = "等待扫码..."
                         86090 -> binding.tvStatus.text = "已扫码，请在手机端确认"
@@ -115,6 +136,7 @@ class QrLoginActivity : AppCompatActivity() {
                             }
                             binding.tvStatus.text = "登录成功，Cookie 已写入（返回上一页）"
                             AppLog.i("QrLogin", "login success sess=${BiliClient.cookies.hasSessData()}")
+                            binding.tvDebug.text = "login ok sess=${BiliClient.cookies.hasSessData()}"
                             delay(800)
                             finish()
                             return@launch
@@ -125,6 +147,7 @@ class QrLoginActivity : AppCompatActivity() {
                 } catch (t: Throwable) {
                     AppLog.w("QrLogin", "poll failed", t)
                     binding.tvStatus.text = "轮询失败：${t.message}"
+                    binding.tvDebug.text = "poll err=${t.javaClass.simpleName}"
                 }
                 delay(2000)
             }
