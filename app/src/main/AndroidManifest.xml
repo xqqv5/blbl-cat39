@@ -24,18 +24,25 @@
 
         <activity
             android:name=".feature.player.PlayerActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize" />
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name=".feature.live.LivePlayerActivity"
-            android:configChanges="keyboardHidden|orientation|screenSize" />
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="sensorLandscape" />
 
-        <activity android:name=".feature.settings.SettingsActivity" />
-        <activity android:name=".feature.login.QrLoginActivity" />
+        <activity
+            android:name=".feature.settings.SettingsActivity"
+            android:screenOrientation="sensorLandscape" />
+        <activity
+            android:name=".feature.login.QrLoginActivity"
+            android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name=".ui.MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="sensorLandscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
