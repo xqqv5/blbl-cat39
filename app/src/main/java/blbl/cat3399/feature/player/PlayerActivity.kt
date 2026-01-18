@@ -16,14 +16,20 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime
@@ -61,12 +67,27 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class PlayerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var debugJob: kotlinx.coroutines.Job? = null
+    private var debugCdnHost: String? = null
+    private var debugVideoTransferHost: String? = null
+    private var debugAudioTransferHost: String? = null
+    private var debugVideoDecoderName: String? = null
+    private var debugVideoInputWidth: Int? = null
+    private var debugVideoInputHeight: Int? = null
+    private var debugVideoInputFps: Float? = null
+    private var debugDroppedFramesTotal: Long = 0L
+    private var debugRebufferCount: Int = 0
+    private var debugLastPlaybackState: Int = Player.STATE_IDLE
+    private var debugRenderFps: Float? = null
+    private var debugRenderFpsLastAtMs: Long? = null
+    private var debugRenderedFramesLastCount: Int? = null
+    private var debugRenderedFramesLastAtMs: Long? = null
     private var progressJob: kotlinx.coroutines.Job? = null
     private var autoResumeJob: kotlinx.coroutines.Job? = null
     private var autoResumeHintTimeoutJob: kotlinx.coroutines.Job? = null
@@ -282,6 +303,10 @@ class PlayerActivity : AppCompatActivity() {
                         else -> playbackState.toString()
                     }
                 trace?.log("exo:state", "state=$state pos=${exo.currentPosition}ms")
+                if (playbackState == Player.STATE_BUFFERING && debugLastPlaybackState != Player.STATE_BUFFERING && exo.playWhenReady) {
+                    debugRebufferCount++
+                }
+                debugLastPlaybackState = playbackState
                 if (playbackState == Player.STATE_ENDED) {
                     stopReportProgressLoop(flush = true, reason = "ended")
                     handlePlaybackEnded(exo)
@@ -297,6 +322,37 @@ class PlayerActivity : AppCompatActivity() {
 
         })
         exo.addAnalyticsListener(object : AnalyticsListener {
+            override fun onVideoDecoderInitialized(
+                eventTime: EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                debugVideoDecoderName = decoderName
+            }
+
+            override fun onVideoInputFormatChanged(eventTime: EventTime, format: Format, decoderReuseEvaluation: DecoderReuseEvaluation?) {
+                debugVideoInputWidth = format.width.takeIf { it > 0 }
+                debugVideoInputHeight = format.height.takeIf { it > 0 }
+                debugVideoInputFps = format.frameRate.takeIf { it > 0f }
+            }
+
+            override fun onDroppedVideoFrames(eventTime: EventTime, droppedFrames: Int, elapsedMs: Long) {
+                debugDroppedFramesTotal += droppedFrames.toLong().coerceAtLeast(0L)
+            }
+
+            override fun onVideoFrameProcessingOffset(eventTime: EventTime, totalProcessingOffsetUs: Long, frameCount: Int) {
+                val now = eventTime.realtimeMs
+                val last = debugRenderFpsLastAtMs
+                debugRenderFpsLastAtMs = now
+                if (last == null) return
+                val deltaMs = now - last
+                if (deltaMs <= 0L || deltaMs > 60_000L) return
+                val frames = frameCount.coerceAtLeast(0)
+                if (frames == 0) return
+                debugRenderFps = (frames * 1000f) / deltaMs.toFloat()
+            }
+
             override fun onRenderedFirstFrame(eventTime: EventTime, output: Any, renderTimeMs: Long) {
                 if (traceFirstFrameLogged) return
                 traceFirstFrameLogged = true
@@ -532,6 +588,20 @@ class PlayerActivity : AppCompatActivity() {
         session = session.copy(actualQn = 0)
         session = session.copy(actualAudioId = 0)
         currentViewDurationMs = null
+        debugCdnHost = null
+        debugVideoTransferHost = null
+        debugAudioTransferHost = null
+        debugVideoDecoderName = null
+        debugVideoInputWidth = null
+        debugVideoInputHeight = null
+        debugVideoInputFps = null
+        debugDroppedFramesTotal = 0L
+        debugRebufferCount = 0
+        debugLastPlaybackState = Player.STATE_IDLE
+        debugRenderFps = null
+        debugRenderFpsLastAtMs = null
+        debugRenderedFramesLastCount = null
+        debugRenderedFramesLastAtMs = null
         subtitleAvailable = false
         subtitleConfig = null
         subtitleItems = emptyList()
@@ -669,16 +739,18 @@ class PlayerActivity : AppCompatActivity() {
                     (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
                     applySubtitleEnabled(exo)
 
-                    val okHttpFactory = OkHttpDataSource.Factory(BiliClient.cdnOkHttp)
                     trace?.log("exo:setMediaSource:start")
                     when (playable) {
                         is Playable.Dash -> {
                             lastPickedDash = playable
+                            debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
                             AppLog.i(
                                 "Player",
                                 "picked DASH qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} a=${playable.audioKind}(${playable.audioId}) video=${playable.videoUrl.take(40)}",
                             )
-                            exo.setMediaSource(buildMerged(okHttpFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
+                            val videoFactory = createCdnFactory(DebugStreamKind.VIDEO)
+                            val audioFactory = createCdnFactory(DebugStreamKind.AUDIO)
+                            exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
                             applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
                             applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
                         }
@@ -687,8 +759,10 @@ class PlayerActivity : AppCompatActivity() {
                             lastPickedDash = null
                             session = session.copy(actualAudioId = 0)
                             (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+                            debugCdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
                             AppLog.i("Player", "picked Progressive url=${playable.url.take(60)}")
-                            exo.setMediaSource(buildProgressive(okHttpFactory, playable.url, subtitleConfig))
+                            val mainFactory = createCdnFactory(DebugStreamKind.MAIN)
+                            exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
                         }
                     }
                     trace?.log("exo:setMediaSource:done")
@@ -2063,17 +2137,43 @@ class PlayerActivity : AppCompatActivity() {
         error("No playable url in playurl response")
     }
 
+    private enum class DebugStreamKind { VIDEO, AUDIO, MAIN }
+
+    private fun createCdnFactory(kind: DebugStreamKind): OkHttpDataSource.Factory {
+        val listener =
+            object : TransferListener {
+                override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+
+                override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+                    val host = dataSpec.uri.host?.trim().orEmpty()
+                    if (host.isBlank()) return
+                    when (kind) {
+                        DebugStreamKind.VIDEO -> debugVideoTransferHost = host
+                        DebugStreamKind.AUDIO -> debugAudioTransferHost = host
+                        DebugStreamKind.MAIN -> debugVideoTransferHost = host
+                    }
+                }
+
+                override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {}
+
+                override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+            }
+
+        return OkHttpDataSource.Factory(BiliClient.cdnOkHttp).setTransferListener(listener)
+    }
+
     private fun buildMerged(
-        factory: OkHttpDataSource.Factory,
+        videoFactory: OkHttpDataSource.Factory,
+        audioFactory: OkHttpDataSource.Factory,
         videoUrl: String,
         audioUrl: String,
         subtitle: MediaItem.SubtitleConfiguration?,
     ): MediaSource {
         val subs = listOfNotNull(subtitle)
-        val videoSource = ProgressiveMediaSource.Factory(factory).createMediaSource(
+        val videoSource = ProgressiveMediaSource.Factory(videoFactory).createMediaSource(
             MediaItem.Builder().setUri(Uri.parse(videoUrl)).setSubtitleConfigurations(subs).build(),
         )
-        val audioSource = ProgressiveMediaSource.Factory(factory).createMediaSource(
+        val audioSource = ProgressiveMediaSource.Factory(audioFactory).createMediaSource(
             MediaItem.Builder().setUri(Uri.parse(audioUrl)).build(),
         )
         val subtitleSource = subtitle?.let { buildSubtitleSource(it) }
@@ -2155,11 +2255,13 @@ class PlayerActivity : AppCompatActivity() {
                 showRiskControlBypassHintIfNeeded(playJson)
                 lastAvailableQns = parseDashVideoQnList(playJson)
                 lastAvailableAudioIds = parseDashAudioIdList(playJson, constraints = playbackConstraints)
-                val okHttpFactory = OkHttpDataSource.Factory(BiliClient.cdnOkHttp)
                 when (playable) {
                     is Playable.Dash -> {
                         lastPickedDash = playable
-                        exo.setMediaSource(buildMerged(okHttpFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
+                        debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
+                        val videoFactory = createCdnFactory(DebugStreamKind.VIDEO)
+                        val audioFactory = createCdnFactory(DebugStreamKind.AUDIO)
+                        exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
                         applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
                         applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
                     }
@@ -2167,7 +2269,9 @@ class PlayerActivity : AppCompatActivity() {
                         lastPickedDash = null
                         session = session.copy(actualAudioId = 0)
                         (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-                        exo.setMediaSource(buildProgressive(okHttpFactory, playable.url, subtitleConfig))
+                        debugCdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
+                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN)
+                        exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
                     }
                 }
                 exo.prepare()
@@ -2263,50 +2367,117 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun buildDebugText(exo: ExoPlayer): String {
+        updateDebugVideoStatsFromCounters(exo)
         val sb = StringBuilder()
-        sb.append(
+        val state =
             when (exo.playbackState) {
                 Player.STATE_IDLE -> "IDLE"
-                Player.STATE_BUFFERING -> "BUFFER"
+                Player.STATE_BUFFERING -> "BUFFERING"
                 Player.STATE_READY -> "READY"
                 Player.STATE_ENDED -> "ENDED"
                 else -> exo.playbackState.toString()
-            },
-        )
+            }
+        sb.append("state=").append(state)
         sb.append(" playing=").append(exo.isPlaying)
+        sb.append(" pwr=").append(exo.playWhenReady)
         sb.append('\n')
+
         sb.append("pos=").append(exo.currentPosition).append("ms")
         sb.append(" buf=").append(exo.bufferedPosition).append("ms")
         sb.append(" spd=").append(String.format(Locale.US, "%.2f", exo.playbackParameters.speed))
         sb.append('\n')
-        val vs = exo.videoSize
-        if (vs.width > 0 && vs.height > 0) {
-            sb.append("size=").append(vs.width).append("x").append(vs.height)
-            sb.append(" par=").append(String.format(Locale.US, "%.2f", vs.pixelWidthHeightRatio))
+
+        val trackFormat = pickSelectedVideoFormat(exo)
+        val res = buildDebugResolutionText(exo.videoSize, debugVideoInputWidth, debugVideoInputHeight, trackFormat)
+        sb.append("res=").append(res)
+        val fps =
+            formatDebugFps(debugRenderFps)
+                ?: formatDebugFps(debugVideoInputFps ?: trackFormat?.frameRate)
+                ?: "-"
+        sb.append(" fps=").append(fps)
+        val cdnVideo = debugVideoTransferHost?.trim().takeIf { !it.isNullOrBlank() }
+        val cdnAudio = debugAudioTransferHost?.trim().takeIf { !it.isNullOrBlank() }
+        val cdnPicked = cdnVideo ?: debugCdnHost?.trim().takeIf { !it.isNullOrBlank() } ?: "-"
+        val cdnHost =
+            if (!cdnAudio.isNullOrBlank() && !cdnVideo.isNullOrBlank() && cdnAudio != cdnVideo) {
+                "v=$cdnVideo a=$cdnAudio"
+            } else {
+                cdnPicked
+            }
+        if (cdnHost.length <= 42) {
+            sb.append(" cdn=").append(cdnHost)
+            sb.append('\n')
+        } else {
+            sb.append('\n')
+            sb.append("cdn=").append(cdnHost)
             sb.append('\n')
         }
+
+        sb.append("decoder=").append(shortenDebugValue(debugVideoDecoderName ?: "-", maxChars = 64))
+        sb.append('\n')
+
+        sb.append("dropped=").append(debugDroppedFramesTotal)
+        sb.append(" rebuffer=").append(debugRebufferCount)
+        return sb.toString()
+    }
+
+    private fun updateDebugVideoStatsFromCounters(exo: ExoPlayer) {
+        val nowMs = SystemClock.elapsedRealtime()
+        val counters = exo.videoDecoderCounters ?: return
+        counters.ensureUpdated()
+
+        // Dropped frames: keep the max to avoid going backwards across updates.
+        debugDroppedFramesTotal = maxOf(debugDroppedFramesTotal, counters.droppedBufferCount.toLong())
+
+        // Render fps: derive from rendered output buffers between overlay updates.
+        val count = counters.renderedOutputBufferCount
+        val lastCount = debugRenderedFramesLastCount
+        val lastAt = debugRenderedFramesLastAtMs
+        debugRenderedFramesLastCount = count
+        debugRenderedFramesLastAtMs = nowMs
+
+        if (lastCount == null || lastAt == null) return
+        val deltaMs = nowMs - lastAt
+        val deltaFrames = count - lastCount
+        if (deltaMs <= 0L || deltaMs > 10_000L) return
+        if (deltaFrames <= 0) return
+        val instantFps = (deltaFrames * 1000f) / deltaMs.toFloat()
+        debugRenderFps = debugRenderFps?.let { it * 0.7f + instantFps * 0.3f } ?: instantFps
+    }
+
+    private fun buildDebugResolutionText(vs: VideoSize, fallbackWidth: Int?, fallbackHeight: Int?, trackFormat: Format?): String {
+        val w = vs.width.takeIf { it > 0 } ?: fallbackWidth ?: 0
+        val h = vs.height.takeIf { it > 0 } ?: fallbackHeight ?: 0
+        if (w > 0 && h > 0) return "${w}x${h}"
+        val tw = trackFormat?.width?.takeIf { it > 0 } ?: 0
+        val th = trackFormat?.height?.takeIf { it > 0 } ?: 0
+        return if (tw > 0 && th > 0) "${tw}x${th}" else "-"
+    }
+
+    private fun formatDebugFps(fps: Float?): String? {
+        val v = fps?.takeIf { it > 0f } ?: return null
+        val rounded = v.roundToInt().toFloat()
+        return if (abs(v - rounded) < 0.05f) rounded.toInt().toString() else String.format(Locale.US, "%.1f", v)
+    }
+
+    private fun shortenDebugValue(value: String, maxChars: Int): String {
+        val v = value.trim()
+        if (v.length <= maxChars) return v
+        return v.take(maxChars - 1) + "…"
+    }
+
+    private fun pickSelectedVideoFormat(exo: ExoPlayer): Format? {
         val tracks = exo.currentTracks
-        var videoLine: String? = null
-        var audioLine: String? = null
         for (g in tracks.groups) {
             if (!g.isSelected) continue
             for (i in 0 until g.length) {
                 if (!g.isTrackSelected(i)) continue
                 val f = g.getTrackFormat(i)
                 val mime = f.sampleMimeType ?: ""
-                val codecs = f.codecs ?: ""
-                if (mime.startsWith("video/") && videoLine == null) {
-                    videoLine = "v=$mime ${f.width}x${f.height} br=${f.bitrate} $codecs"
-                }
-                if (mime.startsWith("audio/") && audioLine == null) {
-                    audioLine = "a=$mime br=${f.bitrate} ch=${f.channelCount} $codecs"
-                }
+                if (mime.startsWith("video/")) return f
             }
         }
-        if (videoLine != null) sb.append(videoLine).append('\n')
-        if (audioLine != null) sb.append(audioLine).append('\n')
-        sb.append("ua=").append(BiliClient.prefs.userAgent.take(28)).append("…")
-        return sb.toString()
+        return null
     }
 
     private fun showDanmakuOpacityDialog() {
