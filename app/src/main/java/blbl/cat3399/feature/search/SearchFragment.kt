@@ -35,6 +35,7 @@ import blbl.cat3399.core.ui.enableDpadTabFocus
 import blbl.cat3399.databinding.FragmentSearchBinding
 import blbl.cat3399.feature.following.FollowingGridAdapter
 import blbl.cat3399.feature.following.UpDetailActivity
+import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.live.LivePlayerActivity
 import blbl.cat3399.feature.live.LiveRoomAdapter
 import blbl.cat3399.feature.my.BangumiFollowAdapter
@@ -437,24 +438,30 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 
     private fun setupResults() {
         videoAdapter =
-            VideoCardAdapter { card, pos ->
-                val playlistItems =
-                    videoAdapter.snapshot().map {
-                        PlayerPlaylistItem(
-                            bvid = it.bvid,
-                            cid = it.cid,
-                            title = it.title,
-                        )
-                    }
-                val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "Search")
-                startActivity(
-                    Intent(requireContext(), PlayerActivity::class.java)
-                        .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
-                        .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
-                        .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
-                        .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
-                )
-            }
+            VideoCardAdapter(
+                onClick = { card, pos ->
+                    val playlistItems =
+                        videoAdapter.snapshot().map {
+                            PlayerPlaylistItem(
+                                bvid = it.bvid,
+                                cid = it.cid,
+                                title = it.title,
+                            )
+                        }
+                    val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "Search")
+                    startActivity(
+                        Intent(requireContext(), PlayerActivity::class.java)
+                            .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
+                            .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
+                            .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
+                            .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
+                    )
+                },
+                onLongClick = { card, _ ->
+                    openUpDetailFromVideoCard(card)
+                    true
+                },
+            )
         videoAdapter.setTvMode(isTvMode)
 
         if (!::mediaAdapter.isInitialized) {
@@ -502,13 +509,32 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         (binding.recyclerResults.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         binding.recyclerResults.addOnChildAttachStateChangeListener(
             object : RecyclerView.OnChildAttachStateChangeListener {
-                override fun onChildViewAttachedToWindow(view: View) {
-                    view.setOnKeyListener { v, keyCode, event ->
-	                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-	                        if (binding.panelResults.visibility != View.VISIBLE) return@setOnKeyListener false
+	                override fun onChildViewAttachedToWindow(view: View) {
+	                    view.setOnKeyListener { v, keyCode, event ->
+	                        if (
+	                            keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+	                            keyCode == KeyEvent.KEYCODE_ENTER ||
+	                            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+	                        ) {
+	                            val handled = (v.getTag(R.id.tag_long_press_handled) as? Boolean) == true
+	                            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) {
+	                                if (!handled) {
+	                                    v.setTag(R.id.tag_long_press_handled, true)
+	                                    v.performLongClick()
+	                                }
+	                                return@setOnKeyListener true
+	                            }
+	                            if (event.action == KeyEvent.ACTION_UP && handled) {
+	                                v.setTag(R.id.tag_long_press_handled, false)
+	                                return@setOnKeyListener true
+	                            }
+	                        }
 
-	                        val lm = binding.recyclerResults.layoutManager as? GridLayoutManager ?: return@setOnKeyListener false
-	                        val holder = binding.recyclerResults.findContainingViewHolder(v) ?: return@setOnKeyListener false
+		                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+		                        if (binding.panelResults.visibility != View.VISIBLE) return@setOnKeyListener false
+	
+		                        val lm = binding.recyclerResults.layoutManager as? GridLayoutManager ?: return@setOnKeyListener false
+		                        val holder = binding.recyclerResults.findContainingViewHolder(v) ?: return@setOnKeyListener false
 	                        val pos = holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnKeyListener false
 
 	                        when (keyCode) {
@@ -574,12 +600,13 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 	                        }
                     }
                 }
-
-                override fun onChildViewDetachedFromWindow(view: View) {
-                    view.setOnKeyListener(null)
-                }
-            },
-        )
+	
+	                override fun onChildViewDetachedFromWindow(view: View) {
+	                    view.setOnKeyListener(null)
+	                    view.setTag(R.id.tag_long_press_handled, false)
+	                }
+	            },
+	        )
         binding.recyclerResults.clearOnScrollListeners()
         binding.recyclerResults.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {

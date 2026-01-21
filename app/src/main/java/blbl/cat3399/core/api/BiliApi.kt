@@ -1130,6 +1130,9 @@ object BiliApi {
                             durationSec = it.optInt("duration", 0),
                             ownerName = it.optString("author_name", ""),
                             ownerFace = it.optString("author_face").takeIf { s -> s.isNotBlank() },
+                            ownerMid =
+                                it.optLong("author_mid").takeIf { v -> v > 0 }
+                                    ?: it.optLong("mid").takeIf { v -> v > 0 },
                             view = null,
                             danmaku = null,
                             pubDate = null,
@@ -1412,6 +1415,7 @@ object BiliApi {
                             durationSec = obj.optInt("duration", 0),
                             ownerName = upper.optString("name", ""),
                             ownerFace = upper.optString("face").takeIf { it.isNotBlank() },
+                            ownerMid = upper.optLong("mid").takeIf { it > 0 },
                             view = cnt.optLong("play").takeIf { it > 0 },
                             danmaku = cnt.optLong("danmaku").takeIf { it > 0 },
                             pubDate = obj.optLong("pubdate").takeIf { it > 0 },
@@ -1905,6 +1909,7 @@ object BiliApi {
                     durationSec = obj.optInt("duration", parseDuration(obj.optString("duration_text", "0:00"))),
                     ownerName = owner.optString("name", ""),
                     ownerFace = owner.optString("face").takeIf { it.isNotBlank() },
+                    ownerMid = owner.optLong("mid").takeIf { it > 0 },
                     view = stat.optLong("view").takeIf { it > 0 } ?: stat.optLong("play").takeIf { it > 0 },
                     danmaku = stat.optLong("danmaku").takeIf { it > 0 } ?: stat.optLong("dm").takeIf { it > 0 },
                     pubDate = obj.optLong("pubdate").takeIf { it > 0 },
@@ -1931,6 +1936,10 @@ object BiliApi {
                     durationSec = parseDuration(obj.optString("duration", "0:00")),
                     ownerName = obj.optString("author", ""),
                     ownerFace = null,
+                    ownerMid =
+                        obj.optLong("mid").takeIf { it > 0 }
+                            ?: obj.optLong("up_mid").takeIf { it > 0 }
+                            ?: obj.optLong("author_mid").takeIf { it > 0 },
                     view = obj.optLong("play").takeIf { it > 0 },
                     danmaku = obj.optLong("video_review").takeIf { it > 0 },
                     pubDate = obj.optLong("pubdate").takeIf { it > 0 },
@@ -2074,6 +2083,7 @@ object BiliApi {
             val author = modules.optJSONObject("module_author")
             val ownerName = author?.optString("name", "") ?: ""
             val ownerFace = author?.optString("face")?.takeIf { it.isNotBlank() }
+            val ownerMid = author?.optLong("mid")?.takeIf { v -> v > 0 }
             val authorPubTs = author?.optLong("pub_ts")?.takeIf { v -> v > 0 }
 
             val archive = major.optJSONObject("archive")
@@ -2091,6 +2101,7 @@ object BiliApi {
                         durationSec = parseDuration(archive.optString("duration_text", "0:00")),
                         ownerName = ownerName,
                         ownerFace = ownerFace,
+                        ownerMid = ownerMid,
                         view = parseCountText(stat.optString("play", "")),
                         danmaku = parseCountText(stat.optString("danmaku", "")),
                         pubDate = pubDate,
@@ -2119,6 +2130,7 @@ object BiliApi {
                         durationSec = parseDuration(ugcSeason.optString("duration_text", "0:00")),
                         ownerName = ownerName,
                         ownerFace = ownerFace,
+                        ownerMid = ownerMid,
                         view = parseCountText(stat.optString("play", "")),
                         danmaku = parseCountText(stat.optString("danmaku", "")),
                         pubDate = authorPubTs,
@@ -2147,6 +2159,7 @@ object BiliApi {
                         durationSec = parseDuration(additionalUgc.optString("duration", "0:00")),
                         ownerName = ownerName,
                         ownerFace = ownerFace,
+                        ownerMid = ownerMid,
                         view = null,
                         danmaku = null,
                         pubDate = authorPubTs,

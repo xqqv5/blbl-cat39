@@ -13,10 +13,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
+import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.databinding.FragmentVideoGridBinding
+import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerActivity
 import blbl.cat3399.feature.player.PlayerPlaylistItem
 import blbl.cat3399.feature.player.PlayerPlaylistStore
@@ -41,24 +43,30 @@ class MyToViewFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         if (!::adapter.isInitialized) {
             adapter =
-                VideoCardAdapter { card, pos ->
-                    val playlistItems =
-                        adapter.snapshot().map {
-                            PlayerPlaylistItem(
-                                bvid = it.bvid,
-                                cid = it.cid,
-                                title = it.title,
-                            )
-                        }
-                    val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "MyToView")
-                    startActivity(
-                        Intent(requireContext(), PlayerActivity::class.java)
-                            .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
-                            .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
-                            .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
-                            .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
-                    )
-                }
+                VideoCardAdapter(
+                    onClick = { card, pos ->
+                        val playlistItems =
+                            adapter.snapshot().map {
+                                PlayerPlaylistItem(
+                                    bvid = it.bvid,
+                                    cid = it.cid,
+                                    title = it.title,
+                                )
+                            }
+                        val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "MyToView")
+                        startActivity(
+                            Intent(requireContext(), PlayerActivity::class.java)
+                                .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
+                                .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
+                                .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
+                                .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
+                        )
+                    },
+                    onLongClick = { card, _ ->
+                        openUpDetailFromVideoCard(card)
+                        true
+                    },
+                )
         }
         adapter.setTvMode(TvMode.isEnabled(requireContext()))
         binding.recycler.adapter = adapter
@@ -69,6 +77,25 @@ class MyToViewFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
             object : RecyclerView.OnChildAttachStateChangeListener {
                 override fun onChildViewAttachedToWindow(view: View) {
                     view.setOnKeyListener { v, keyCode, event ->
+                        if (
+                            keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER ||
+                            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                        ) {
+                            val handled = (v.getTag(R.id.tag_long_press_handled) as? Boolean) == true
+                            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) {
+                                if (!handled) {
+                                    v.setTag(R.id.tag_long_press_handled, true)
+                                    v.performLongClick()
+                                }
+                                return@setOnKeyListener true
+                            }
+                            if (event.action == KeyEvent.ACTION_UP && handled) {
+                                v.setTag(R.id.tag_long_press_handled, false)
+                                return@setOnKeyListener true
+                            }
+                        }
+
                         if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                         when (keyCode) {
                             KeyEvent.KEYCODE_DPAD_UP -> {
@@ -131,6 +158,7 @@ class MyToViewFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
 
                 override fun onChildViewDetachedFromWindow(view: View) {
                     view.setOnKeyListener(null)
+                    view.setTag(R.id.tag_long_press_handled, false)
                 }
             },
         )

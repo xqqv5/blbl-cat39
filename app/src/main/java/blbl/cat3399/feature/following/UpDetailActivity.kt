@@ -83,24 +83,26 @@ class UpDetailActivity : AppCompatActivity() {
         blbl.cat3399.core.image.ImageLoader.loadInto(binding.ivAvatar, blbl.cat3399.core.image.ImageUrl.avatar(avatar))
 
         adapter =
-            VideoCardAdapter { card, pos ->
-                val playlistItems =
-                    adapter.snapshot().map {
-                        PlayerPlaylistItem(
-                            bvid = it.bvid,
-                            cid = it.cid,
-                            title = it.title,
-                        )
-                    }
-                val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "UpDetail:$mid")
-                startActivity(
-                    Intent(this, PlayerActivity::class.java)
-                        .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
-                        .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
-                        .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
-                        .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
-                )
-            }
+            VideoCardAdapter(
+                onClick = { card, pos ->
+                    val playlistItems =
+                        adapter.snapshot().map {
+                            PlayerPlaylistItem(
+                                bvid = it.bvid,
+                                cid = it.cid,
+                                title = it.title,
+                            )
+                        }
+                    val token = PlayerPlaylistStore.put(items = playlistItems, index = pos, source = "UpDetail:$mid")
+                    startActivity(
+                        Intent(this, PlayerActivity::class.java)
+                            .putExtra(PlayerActivity.EXTRA_BVID, card.bvid)
+                            .putExtra(PlayerActivity.EXTRA_CID, card.cid ?: -1L)
+                            .putExtra(PlayerActivity.EXTRA_PLAYLIST_TOKEN, token)
+                            .putExtra(PlayerActivity.EXTRA_PLAYLIST_INDEX, pos),
+                    )
+                },
+            )
         adapter.setTvMode(TvMode.isEnabled(this))
         binding.recycler.setHasFixedSize(true)
         binding.recycler.layoutManager = GridLayoutManager(this, spanCountForWidth())

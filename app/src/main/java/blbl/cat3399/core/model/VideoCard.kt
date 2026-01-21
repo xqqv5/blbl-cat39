@@ -8,6 +8,7 @@ data class VideoCard(
     val durationSec: Int,
     val ownerName: String,
     val ownerFace: String?,
+    val ownerMid: Long? = null,
     val view: Long?,
     val danmaku: Long?,
     val pubDate: Long?,

@@ -1,0 +1,57 @@
+package blbl.cat3399.feature.following
+
+import android.content.Intent
+import android.widget.Toast
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import blbl.cat3399.core.api.BiliApi
+import blbl.cat3399.core.api.BiliApiException
+import blbl.cat3399.core.model.VideoCard
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+
+fun Fragment.openUpDetailFromVideoCard(card: VideoCard) {
+    val mid = card.ownerMid?.takeIf { it > 0L }
+    if (mid != null) {
+        startUpDetail(mid = mid, card = card)
+        return
+    }
+
+    if (card.bvid.isBlank()) {
+        Toast.makeText(requireContext(), "未获取到 UP 主信息", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    lifecycleScope.launch {
+        try {
+            val json = BiliApi.view(card.bvid)
+            val code = json.optInt("code", 0)
+            if (code != 0) {
+                val msg = json.optString("message", json.optString("msg", ""))
+                throw BiliApiException(apiCode = code, apiMessage = msg)
+            }
+            val owner = json.optJSONObject("data")?.optJSONObject("owner")
+            val viewMid = owner?.optLong("mid") ?: 0L
+            if (viewMid <= 0L) {
+                Toast.makeText(requireContext(), "未获取到 UP 主信息", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            startUpDetail(mid = viewMid, card = card)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Toast.makeText(requireContext(), "未获取到 UP 主信息", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+private fun Fragment.startUpDetail(mid: Long, card: VideoCard) {
+    startActivity(
+        Intent(requireContext(), UpDetailActivity::class.java)
+            .putExtra(UpDetailActivity.EXTRA_MID, mid)
+            .apply {
+                card.ownerName.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_NAME, it) }
+                card.ownerFace?.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_AVATAR, it) }
+            },
+    )
+}

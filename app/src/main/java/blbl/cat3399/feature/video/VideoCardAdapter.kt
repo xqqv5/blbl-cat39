@@ -17,6 +17,7 @@ import kotlin.math.roundToInt
 
 class VideoCardAdapter(
     private val onClick: (VideoCard, Int) -> Unit,
+    private val onLongClick: ((VideoCard, Int) -> Boolean)? = null,
 ) : RecyclerView.Adapter<VideoCardAdapter.Vh>() {
     private val items = ArrayList<VideoCard>()
     private var tvMode: Boolean = false
@@ -52,7 +53,7 @@ class VideoCardAdapter(
         return Vh(binding)
     }
 
-    override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], tvMode, onClick)
+    override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], tvMode, onClick, onLongClick)
 
     override fun getItemCount(): Int = items.size
 
@@ -64,7 +65,7 @@ class VideoCardAdapter(
         private var baseMsDanmakuText: Int? = null
         private var baseMsPubdate: Int? = null
 
-        fun bind(item: VideoCard, tvMode: Boolean, onClick: (VideoCard, Int) -> Unit) {
+        fun bind(item: VideoCard, tvMode: Boolean, onClick: (VideoCard, Int) -> Unit, onLongClick: ((VideoCard, Int) -> Boolean)?) {
             val uiScale = UiScale.factor(binding.root.context, tvMode)
             if (lastTvMode != tvMode || lastUiScale != uiScale) {
                 applySizing(tvMode, uiScale)
@@ -87,6 +88,11 @@ class VideoCardAdapter(
             binding.root.setOnClickListener {
                 val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnClickListener
                 onClick(item, pos)
+            }
+
+            binding.root.setOnLongClickListener {
+                val pos = bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnLongClickListener false
+                onLongClick?.invoke(item, pos) ?: false
             }
         }
 
