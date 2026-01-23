@@ -1582,14 +1582,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     private fun spanCountForCurrentTab(): Int = spanCountForTab(currentTabIndex)
 
     private fun spanCountForBangumi(): Int {
-        val prefs = BiliClient.prefs
-        val override = prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
-        return when (spanCountForWidth()) {
-            4 -> 6
-            3 -> 4
-            else -> 2
-        }
+        return BiliClient.prefs.pgcGridSpanCount.coerceIn(1, 6)
     }
 
     private fun clearLoadedForTab(index: Int) {

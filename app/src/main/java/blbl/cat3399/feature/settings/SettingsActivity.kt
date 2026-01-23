@@ -246,6 +246,7 @@ class SettingsActivity : AppCompatActivity() {
             "页面设置" -> listOf(
                 SettingEntry("每行卡片数量", gridSpanText(prefs.gridSpanCount), null),
                 SettingEntry("动态页每行卡片数量", gridSpanText(prefs.dynamicGridSpanCount), null),
+                SettingEntry("番剧/电视剧每行卡片数量", gridSpanText(prefs.pgcGridSpanCount), null),
                 SettingEntry("界面大小", sidebarSizeText(prefs.sidebarSize), null),
                 SettingEntry("TV 模式", tvModeText(prefs.uiMode), null),
                 SettingEntry("以全屏模式运行", if (prefs.fullscreenEnabled) "开" else "关", null),
@@ -402,6 +403,19 @@ class SettingsActivity : AppCompatActivity() {
                 ) { selected ->
                     prefs.dynamicGridSpanCount = (selected.toIntOrNull() ?: 3).coerceIn(1, 6)
                     Toast.makeText(this, "动态每行：${gridSpanText(prefs.dynamicGridSpanCount)}", Toast.LENGTH_SHORT).show()
+                    refreshSection(entry.title)
+                }
+            }
+
+            "番剧/电视剧每行卡片数量" -> {
+                val options = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9")
+                showChoiceDialog(
+                    title = "番剧/电视剧每行卡片数量",
+                    items = options,
+                    current = gridSpanText(prefs.pgcGridSpanCount),
+                ) { selected ->
+                    prefs.pgcGridSpanCount = (selected.toIntOrNull() ?: 6).coerceIn(1, 6)
+                    Toast.makeText(this, "番剧每行：${gridSpanText(prefs.pgcGridSpanCount)}", Toast.LENGTH_SHORT).show()
                     refreshSection(entry.title)
                 }
             }

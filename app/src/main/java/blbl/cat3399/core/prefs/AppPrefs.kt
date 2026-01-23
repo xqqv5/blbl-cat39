@@ -177,6 +177,17 @@ class AppPrefs(context: Context) {
         get() = prefs.getInt(KEY_DYNAMIC_GRID_SPAN, 3)
         set(value) = prefs.edit().putInt(KEY_DYNAMIC_GRID_SPAN, value).apply()
 
+    var pgcGridSpanCount: Int
+        get() {
+            val stored = prefs.getInt(KEY_PGC_GRID_SPAN, 6)
+            val span = if (stored <= 0) 6 else stored
+            return span.coerceIn(1, 6)
+        }
+        set(value) {
+            val span = if (value <= 0) 6 else value
+            prefs.edit().putInt(KEY_PGC_GRID_SPAN, span.coerceIn(1, 6)).apply()
+        }
+
     var searchHistory: List<String>
         get() = loadStringList(KEY_SEARCH_HISTORY)
         set(value) = saveStringList(KEY_SEARCH_HISTORY, value)
@@ -280,6 +291,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_ACTION_BUTTONS = "player_action_buttons"
         private const val KEY_GRID_SPAN = "grid_span"
         private const val KEY_DYNAMIC_GRID_SPAN = "dynamic_grid_span"
+        private const val KEY_PGC_GRID_SPAN = "pgc_grid_span"
         private const val KEY_SEARCH_HISTORY = "search_history"
         private const val KEY_GAIA_VGATE_V_VOUCHER = "gaia_vgate_v_voucher"
         private const val KEY_GAIA_VGATE_V_VOUCHER_SAVED_AT_MS = "gaia_vgate_v_voucher_saved_at_ms"

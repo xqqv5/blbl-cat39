@@ -54,7 +54,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
         }
         binding.recycler.adapter = adapter
         binding.recycler.setHasFixedSize(true)
-        binding.recycler.layoutManager = GridLayoutManager(requireContext(), spanCountForBangumi(resources))
+        binding.recycler.layoutManager = GridLayoutManager(requireContext(), spanCountForBangumi())
         (binding.recycler.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         binding.recycler.clearOnScrollListeners()
         binding.recycler.addOnChildAttachStateChangeListener(
@@ -141,7 +141,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
 
     override fun onResume() {
         super.onResume()
-        (binding.recycler.layoutManager as? GridLayoutManager)?.spanCount = spanCountForBangumi(resources)
+        (binding.recycler.layoutManager as? GridLayoutManager)?.spanCount = spanCountForBangumi()
         maybeTriggerInitialLoad()
         restoreFocusIfNeeded()
         maybeConsumePendingFocusFirstItemFromTabSwitch()
@@ -156,16 +156,9 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
         return true
     }
 
-    private fun spanCountForBangumi(resources: android.content.res.Resources): Int {
+    private fun spanCountForBangumi(): Int {
         val prefs = BiliClient.prefs
-        val override = prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
-
-        return when (spanCountForWidth(resources)) {
-            4 -> 6
-            3 -> 4
-            else -> 2
-        }
+        return prefs.pgcGridSpanCount.coerceIn(1, 6)
     }
 
     override fun requestFocusFirstItemFromTabSwitch(): Boolean {
