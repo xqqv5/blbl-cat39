@@ -18,7 +18,6 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiSeason
 import blbl.cat3399.core.net.BiliClient
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.my.BangumiFollowAdapter
@@ -61,7 +60,6 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
                     openBangumiDetail(season)
                 }
         }
-        adapter.setTvMode(TvMode.isEnabled(requireContext()))
 
         binding.recycler.adapter = adapter
         binding.recycler.setHasFixedSize(true)
@@ -154,7 +152,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
 
     override fun onResume() {
         super.onResume()
-        adapter.setTvMode(TvMode.isEnabled(requireContext()))
+        adapter.invalidateSizing()
         (binding.recycler.layoutManager as? GridLayoutManager)?.spanCount = spanCountForPgc()
         maybeTriggerInitialLoad()
         restoreFocusIfNeeded()

@@ -18,14 +18,13 @@ class BangumiFollowAdapter(
     private val onClick: (position: Int, season: BangumiSeason) -> Unit,
 ) : RecyclerView.Adapter<BangumiFollowAdapter.Vh>() {
     private val items = ArrayList<BangumiSeason>()
-    private var tvMode: Boolean = false
 
     init {
         setHasStableIds(true)
     }
 
-    fun setTvMode(enabled: Boolean) {
-        tvMode = enabled
+    fun invalidateSizing() {
+        if (itemCount <= 0) return
         notifyItemRangeChanged(0, itemCount)
     }
 
@@ -49,12 +48,11 @@ class BangumiFollowAdapter(
         return Vh(binding)
     }
 
-    override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], tvMode, onClick)
+    override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], onClick)
 
     override fun getItemCount(): Int = items.size
 
     class Vh(private val binding: ItemBangumiFollowBinding) : RecyclerView.ViewHolder(binding.root) {
-        private var lastTvMode: Boolean? = null
         private var lastUiScale: Float? = null
         private var baseRootMargins: IntArray? = null
         private var baseCornerRadiusPx: Float? = null
@@ -69,11 +67,10 @@ class BangumiFollowAdapter(
         private var baseSubtitleMargins: IntArray? = null
         private var baseSubtitleTextSizePx: Float? = null
 
-        fun bind(item: BangumiSeason, tvMode: Boolean, onClick: (position: Int, season: BangumiSeason) -> Unit) {
-            val uiScale = UiScale.factor(binding.root.context, tvMode)
-            if (lastTvMode != tvMode || lastUiScale != uiScale) {
+        fun bind(item: BangumiSeason, onClick: (position: Int, season: BangumiSeason) -> Unit) {
+            val uiScale = UiScale.factor(binding.root.context)
+            if (lastUiScale != uiScale) {
                 applySizing(uiScale)
-                lastTvMode = tvMode
                 lastUiScale = uiScale
             }
 

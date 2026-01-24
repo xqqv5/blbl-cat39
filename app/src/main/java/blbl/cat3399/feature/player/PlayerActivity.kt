@@ -12,7 +12,6 @@ import android.view.View
 import android.view.ViewGroup.MarginLayoutParams
 import android.widget.SeekBar
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -48,8 +47,8 @@ import blbl.cat3399.core.model.DanmakuShield
 import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.ActivityStackLimiter
+import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
@@ -73,7 +72,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-class PlayerActivity : AppCompatActivity() {
+class PlayerActivity : BaseActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
     private var debugJob: kotlinx.coroutines.Job? = null
@@ -4307,17 +4306,15 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun applyUiMode() {
-        val tvMode = TvMode.isEnabled(this)
         val density = resources.displayMetrics.density
-        val autoScale = if (tvMode) 1.0f else PlayerContentAutoScale.factor(binding.playerView, density)
+        val autoScale = PlayerContentAutoScale.factor(binding.playerView, density)
 
-        // Use UiScale for user preference (S/M/L) and TV density fix; apply autoScale only in normal mode.
+        // Use UiScale for device + user preference; additionally fine-tune by actual 16:9 content size.
         val uiScale =
-            (UiScale.factor(this, tvMode, BiliClient.prefs.sidebarSize) * autoScale)
+            (UiScale.factor(this, BiliClient.prefs.sidebarSize) * autoScale)
                 .coerceIn(0.80f, 1.45f)
         val sidebarScale =
-            (UiScale.factor(this, tvMode, BiliClient.prefs.sidebarSize) * if (tvMode) 1.0f else 1.20f)
-                .coerceIn(0.60f, 1.40f)
+            UiScale.factor(this, BiliClient.prefs.sidebarSize).coerceIn(0.60f, 1.40f)
 
         fun px(id: Int): Int = resources.getDimensionPixelSize(id)
         fun pxF(id: Int): Float = resources.getDimension(id)
@@ -4325,11 +4322,11 @@ class PlayerActivity : AppCompatActivity() {
         fun scaledPxF(id: Int): Float = pxF(id) * uiScale
         fun scaledSidebarPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
 
-        val topPadH = scaledPx(if (tvMode) R.dimen.player_top_bar_padding_h_tv else R.dimen.player_top_bar_padding_h)
-        val topPadV = scaledPx(if (tvMode) R.dimen.player_top_bar_padding_v_tv else R.dimen.player_top_bar_padding_v)
+        val topPadH = scaledPx(R.dimen.player_top_bar_padding_h_tv)
+        val topPadV = scaledPx(R.dimen.player_top_bar_padding_v_tv)
         val topPadTopExtra =
             scaledPx(
-                if (tvMode) R.dimen.player_top_bar_padding_top_extra_tv else R.dimen.player_top_bar_padding_top_extra,
+                R.dimen.player_top_bar_padding_top_extra_tv,
             )
         val topPadTop = topPadV + topPadTopExtra
         val topPadBottom = topPadV
@@ -4342,10 +4339,10 @@ class PlayerActivity : AppCompatActivity() {
             binding.topBar.setPadding(topPadH, topPadTop, topPadH, topPadBottom)
         }
 
-        val topBtnSize = scaledPx(if (tvMode) R.dimen.player_top_button_size_tv else R.dimen.player_top_button_size).coerceAtLeast(1)
-        val topBtnPad = scaledPx(if (tvMode) R.dimen.player_top_button_padding_tv else R.dimen.player_top_button_padding)
-        val backBtnSize = scaledSidebarPx(if (tvMode) R.dimen.sidebar_settings_size_tv else R.dimen.sidebar_settings_size).coerceAtLeast(1)
-        val backBtnPad = scaledSidebarPx(if (tvMode) R.dimen.sidebar_settings_padding_tv else R.dimen.sidebar_settings_padding)
+        val topBtnSize = scaledPx(R.dimen.player_top_button_size_tv).coerceAtLeast(1)
+        val topBtnPad = scaledPx(R.dimen.player_top_button_padding_tv)
+        val backBtnSize = scaledSidebarPx(R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
+        val backBtnPad = scaledSidebarPx(R.dimen.sidebar_settings_padding_tv)
         setSize(binding.btnBack, backBtnSize, backBtnSize)
         binding.btnBack.setPadding(backBtnPad, backBtnPad, backBtnPad, backBtnPad)
         setSize(binding.btnSettings, topBtnSize, topBtnSize)
@@ -4353,11 +4350,11 @@ class PlayerActivity : AppCompatActivity() {
 
         binding.tvTitle.setTextSize(
             TypedValue.COMPLEX_UNIT_PX,
-            scaledPxF(if (tvMode) R.dimen.player_title_text_size_tv else R.dimen.player_title_text_size),
+            scaledPxF(R.dimen.player_title_text_size_tv),
         )
         (binding.tvTitle.layoutParams as? MarginLayoutParams)?.let { lp ->
-            val ms = scaledPx(if (tvMode) R.dimen.player_title_margin_start_tv else R.dimen.player_title_margin_start)
-            val me = scaledPx(if (tvMode) R.dimen.player_title_margin_end_tv else R.dimen.player_title_margin_end)
+            val ms = scaledPx(R.dimen.player_title_margin_start_tv)
+            val me = scaledPx(R.dimen.player_title_margin_end_tv)
             if (lp.marginStart != ms || lp.marginEnd != me) {
                 lp.marginStart = ms
                 lp.marginEnd = me
@@ -4367,13 +4364,13 @@ class PlayerActivity : AppCompatActivity() {
 
         binding.tvOnline.setTextSize(
             TypedValue.COMPLEX_UNIT_PX,
-            scaledPxF(if (tvMode) R.dimen.player_online_text_size_tv else R.dimen.player_online_text_size),
+            scaledPxF(R.dimen.player_online_text_size_tv),
         )
 
         run {
-            val ms = scaledPx(if (tvMode) R.dimen.player_title_margin_start_tv else R.dimen.player_title_margin_start)
-            val me = scaledPx(if (tvMode) R.dimen.player_title_margin_end_tv else R.dimen.player_title_margin_end)
-            val mt = scaledPx(if (tvMode) R.dimen.player_title_meta_margin_top_tv else R.dimen.player_title_meta_margin_top)
+            val ms = scaledPx(R.dimen.player_title_margin_start_tv)
+            val me = scaledPx(R.dimen.player_title_margin_end_tv)
+            val mt = scaledPx(R.dimen.player_title_meta_margin_top_tv)
             (binding.llTitleMeta.layoutParams as? MarginLayoutParams)?.let { lp ->
                 if (lp.marginStart != ms || lp.marginEnd != me || lp.topMargin != mt) {
                     lp.marginStart = ms
@@ -4382,7 +4379,7 @@ class PlayerActivity : AppCompatActivity() {
                     binding.llTitleMeta.layoutParams = lp
                 }
             }
-            val pb = scaledPx(if (tvMode) R.dimen.player_title_meta_padding_bottom_tv else R.dimen.player_title_meta_padding_bottom)
+            val pb = scaledPx(R.dimen.player_title_meta_padding_bottom_tv)
             if (binding.llTitleMeta.paddingBottom != pb) {
                 binding.llTitleMeta.setPadding(
                     binding.llTitleMeta.paddingLeft,
@@ -4391,17 +4388,17 @@ class PlayerActivity : AppCompatActivity() {
                     pb,
                 )
             }
-            val metaTextSizePx = scaledPxF(if (tvMode) R.dimen.player_online_text_size_tv else R.dimen.player_online_text_size)
+            val metaTextSizePx = scaledPxF(R.dimen.player_online_text_size_tv)
             binding.tvViewCount.setTextSize(TypedValue.COMPLEX_UNIT_PX, metaTextSizePx)
             binding.tvPubdate.setTextSize(TypedValue.COMPLEX_UNIT_PX, metaTextSizePx)
             val metaIconSize =
-                scaledPx(if (tvMode) R.dimen.video_card_stat_icon_size_tv else R.dimen.video_card_stat_icon_size)
+                scaledPx(R.dimen.video_card_stat_icon_size_tv)
                     .coerceAtLeast(1)
             setSize(binding.ivOnlineIcon, metaIconSize, metaIconSize)
             setSize(binding.ivViewIcon, metaIconSize, metaIconSize)
         }
 
-        val bottomPadV = scaledPx(if (tvMode) R.dimen.player_bottom_bar_padding_v_tv else R.dimen.player_bottom_bar_padding_v)
+        val bottomPadV = scaledPx(R.dimen.player_bottom_bar_padding_v_tv)
         if (binding.bottomBar.paddingTop != bottomPadV || binding.bottomBar.paddingBottom != bottomPadV) {
             binding.bottomBar.setPadding(
                 binding.bottomBar.paddingLeft,
@@ -4412,8 +4409,8 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         (binding.seekProgress.layoutParams as? MarginLayoutParams)?.let { lp ->
-            val height = scaledPx(if (tvMode) R.dimen.player_seekbar_touch_height_tv else R.dimen.player_seekbar_touch_height).coerceAtLeast(1)
-            val mb = scaledPx(if (tvMode) R.dimen.player_seekbar_margin_bottom_tv else R.dimen.player_seekbar_margin_bottom)
+            val height = scaledPx(R.dimen.player_seekbar_touch_height_tv).coerceAtLeast(1)
+            val mb = scaledPx(R.dimen.player_seekbar_margin_bottom_tv)
             if (lp.height != height || lp.bottomMargin != mb) {
                 lp.height = height
                 lp.bottomMargin = mb
@@ -4421,12 +4418,10 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         run {
-            val drawableRes =
-                if (tvMode) R.drawable.seekbar_player_progress_tv else R.drawable.seekbar_player_progress
-            binding.seekProgress.progressDrawable = ContextCompat.getDrawable(this, drawableRes)
+            binding.seekProgress.progressDrawable = ContextCompat.getDrawable(this, R.drawable.seekbar_player_progress)
             val trackHeight =
                 scaledPx(
-                    if (tvMode) R.dimen.player_seekbar_track_height_tv else R.dimen.player_seekbar_track_height,
+                    R.dimen.player_seekbar_track_height,
                 ).coerceAtLeast(1)
             binding.seekProgress.setTrackHeightPx(trackHeight)
         }
@@ -4434,7 +4429,7 @@ class PlayerActivity : AppCompatActivity() {
         (binding.progressPersistentBottom.layoutParams as? MarginLayoutParams)?.let { lp ->
             val height =
                 scaledPx(
-                    if (tvMode) R.dimen.player_persistent_progress_height_tv else R.dimen.player_persistent_progress_height,
+                    R.dimen.player_persistent_progress_height,
                 ).coerceAtLeast(1)
             if (lp.height != height) {
                 lp.height = height
@@ -4442,15 +4437,13 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
         run {
-            val drawableRes =
-                if (tvMode) R.drawable.progress_player_persistent_tv else R.drawable.progress_player_persistent
-            binding.progressPersistentBottom.progressDrawable = ContextCompat.getDrawable(this, drawableRes)
+            binding.progressPersistentBottom.progressDrawable = ContextCompat.getDrawable(this, R.drawable.progress_player_persistent)
         }
 
         (binding.controlsRow.layoutParams as? MarginLayoutParams)?.let { lp ->
-            val height = scaledPx(if (tvMode) R.dimen.player_controls_row_height_tv else R.dimen.player_controls_row_height).coerceAtLeast(1)
-            val ms = scaledPx(if (tvMode) R.dimen.player_controls_row_margin_start_tv else R.dimen.player_controls_row_margin_start)
-            val me = scaledPx(if (tvMode) R.dimen.player_controls_row_margin_end_tv else R.dimen.player_controls_row_margin_end)
+            val height = scaledPx(R.dimen.player_controls_row_height_tv).coerceAtLeast(1)
+            val ms = scaledPx(R.dimen.player_controls_row_margin_start_tv)
+            val me = scaledPx(R.dimen.player_controls_row_margin_end_tv)
             if (lp.height != height || lp.marginStart != ms || lp.marginEnd != me) {
                 lp.height = height
                 lp.marginStart = ms
@@ -4459,15 +4452,16 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
-        // OSD tier already comes from prefs via theme overlay; only apply autoScale here.
-        PlayerOsdSizing.applyToViews(this, binding, scale = autoScale)
+        // OSD tier already comes from prefs via theme overlay; only normalize device/resolution and
+        // fine-tune by actual 16:9 content size.
+        PlayerOsdSizing.applyToViews(this, binding, scale = UiScale.deviceFactor(this) * autoScale)
 
         binding.tvTime.setTextSize(
             TypedValue.COMPLEX_UNIT_PX,
-            scaledPxF(if (tvMode) R.dimen.player_time_text_size_tv else R.dimen.player_time_text_size),
+            scaledPxF(R.dimen.player_time_text_size_tv),
         )
         (binding.tvTime.layoutParams as? MarginLayoutParams)?.let { lp ->
-            val me = scaledPx(if (tvMode) R.dimen.player_time_margin_end_tv else R.dimen.player_time_margin_end)
+            val me = scaledPx(R.dimen.player_time_margin_end_tv)
             if (lp.marginEnd != me) {
                 lp.marginEnd = me
                 binding.tvTime.layoutParams = lp
@@ -4476,10 +4470,10 @@ class PlayerActivity : AppCompatActivity() {
 
         binding.tvSeekHint.setTextSize(
             TypedValue.COMPLEX_UNIT_PX,
-            scaledPxF(if (tvMode) R.dimen.player_seek_hint_text_size_tv else R.dimen.player_seek_hint_text_size),
+            scaledPxF(R.dimen.player_seek_hint_text_size_tv),
         )
-        val hintPadH = scaledPx(if (tvMode) R.dimen.player_seek_hint_padding_h_tv else R.dimen.player_seek_hint_padding_h)
-        val hintPadV = scaledPx(if (tvMode) R.dimen.player_seek_hint_padding_v_tv else R.dimen.player_seek_hint_padding_v)
+        val hintPadH = scaledPx(R.dimen.player_seek_hint_padding_h_tv)
+        val hintPadV = scaledPx(R.dimen.player_seek_hint_padding_v_tv)
         if (
             binding.tvSeekHint.paddingLeft != hintPadH ||
             binding.tvSeekHint.paddingRight != hintPadH ||
@@ -4489,8 +4483,8 @@ class PlayerActivity : AppCompatActivity() {
             binding.tvSeekHint.setPadding(hintPadH, hintPadV, hintPadH, hintPadV)
         }
         (binding.tvSeekHint.layoutParams as? MarginLayoutParams)?.let { lp ->
-            val ms = scaledPx(if (tvMode) R.dimen.player_seek_hint_margin_start_tv else R.dimen.player_seek_hint_margin_start)
-            val mb = scaledPx(if (tvMode) R.dimen.player_seek_hint_margin_bottom_tv else R.dimen.player_seek_hint_margin_bottom)
+            val ms = scaledPx(R.dimen.player_seek_hint_margin_start_tv)
+            val mb = scaledPx(R.dimen.player_seek_hint_margin_bottom_tv)
             if (lp.marginStart != ms || lp.bottomMargin != mb) {
                 lp.marginStart = ms
                 lp.bottomMargin = mb

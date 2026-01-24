@@ -8,10 +8,10 @@ import kotlin.math.pow
  * Auto-scale UI based on the effective 16:9 video content size inside [playerView].
  *
  * Baseline is the "known good" tuning target:
- * - 1920x1080 with density x2.00 -> content height ~= 540dp.
+ * - 1920x1080 with density x1.50 -> content height ~= 720dp.
  */
 object PlayerContentAutoScale {
-    private const val BASELINE_CONTENT_HEIGHT_DP = 540f
+    private const val BASELINE_CONTENT_HEIGHT_DP = 720f
 
     // Conservative scaling curve: reduces sensitivity for large screens.
     private const val EXPONENT = 0.99f
@@ -34,4 +34,3 @@ object PlayerContentAutoScale {
         return scaled.coerceIn(MIN_AUTO_SCALE, MAX_AUTO_SCALE)
     }
 }
-

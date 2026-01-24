@@ -25,14 +25,13 @@ class FollowingAdapter(
 
     private val items = ArrayList<FollowingUi>()
     private var selectedMid: Long = MID_ALL
-    private var tvMode: Boolean = false
 
     init {
         setHasStableIds(true)
     }
 
-    fun setTvMode(enabled: Boolean) {
-        tvMode = enabled
+    fun invalidateSizing() {
+        if (itemCount <= 0) return
         notifyItemRangeChanged(0, itemCount)
     }
 
@@ -71,19 +70,17 @@ class FollowingAdapter(
     }
 
     override fun onBindViewHolder(holder: Vh, position: Int) =
-        holder.bind(items[position], tvMode, items[position].mid == selectedMid, onClick)
+        holder.bind(items[position], items[position].mid == selectedMid, onClick)
 
     override fun getItemCount(): Int = items.size
 
     class Vh(private val binding: ItemFollowingBinding) : RecyclerView.ViewHolder(binding.root) {
-        private var lastTvMode: Boolean? = null
         private var lastUiScale: Float? = null
 
-        fun bind(item: FollowingUi, tvMode: Boolean, selected: Boolean, onClick: (FollowingUi) -> Unit) {
-            val uiScale = UiScale.factor(binding.root.context, tvMode)
-            if (lastTvMode != tvMode || lastUiScale != uiScale) {
-                applySizing(tvMode, uiScale)
-                lastTvMode = tvMode
+        fun bind(item: FollowingUi, selected: Boolean, onClick: (FollowingUi) -> Unit) {
+            val uiScale = UiScale.factor(binding.root.context)
+            if (lastUiScale != uiScale) {
+                applySizing(uiScale)
                 lastUiScale = uiScale
             }
 
@@ -109,13 +106,13 @@ class FollowingAdapter(
             binding.root.setOnClickListener { onClick(item) }
         }
 
-        private fun applySizing(tvMode: Boolean, uiScale: Float) {
+        private fun applySizing(uiScale: Float) {
             fun px(id: Int): Int = binding.root.resources.getDimensionPixelSize(id)
             fun pxF(id: Int): Float = binding.root.resources.getDimension(id)
             fun scaledPx(id: Int): Int = (px(id) * uiScale).roundToInt().coerceAtLeast(0)
             fun scaledPxF(id: Int): Float = pxF(id) * uiScale
 
-            val height = scaledPx(if (tvMode) R.dimen.following_item_height_tv else R.dimen.following_item_height).coerceAtLeast(1)
+            val height = scaledPx(R.dimen.following_item_height_tv).coerceAtLeast(1)
             val rootLp = binding.root.layoutParams
             if (rootLp != null && rootLp.height != height) {
                 rootLp.height = height
@@ -123,8 +120,8 @@ class FollowingAdapter(
             }
 
             (binding.root.layoutParams as? MarginLayoutParams)?.let { lp ->
-                val mv = scaledPx(if (tvMode) R.dimen.following_item_margin_v_tv else R.dimen.following_item_margin_v)
-                val mh = scaledPx(if (tvMode) R.dimen.following_item_margin_h_tv else R.dimen.following_item_margin_h)
+                val mv = scaledPx(R.dimen.following_item_margin_v_tv)
+                val mh = scaledPx(R.dimen.following_item_margin_h_tv)
                 if (lp.topMargin != mv || lp.bottomMargin != mv || lp.leftMargin != mh || lp.rightMargin != mh) {
                     lp.topMargin = mv
                     lp.bottomMargin = mv
@@ -134,7 +131,7 @@ class FollowingAdapter(
                 }
             }
 
-            val padH = scaledPx(if (tvMode) R.dimen.following_container_padding_h_tv else R.dimen.following_container_padding_h)
+            val padH = scaledPx(R.dimen.following_container_padding_h_tv)
             if (binding.container.paddingLeft != padH || binding.container.paddingRight != padH) {
                 binding.container.setPadding(
                     padH,
@@ -144,10 +141,9 @@ class FollowingAdapter(
                 )
             }
 
-            val selectedWidth = scaledPx(if (tvMode) R.dimen.following_selected_width_tv else R.dimen.following_selected_width)
-            val selectedHeight = scaledPx(if (tvMode) R.dimen.following_selected_height_tv else R.dimen.following_selected_height)
-            val selectedMarginEnd =
-                scaledPx(if (tvMode) R.dimen.following_selected_margin_end_tv else R.dimen.following_selected_margin_end)
+            val selectedWidth = scaledPx(R.dimen.following_selected_width_tv)
+            val selectedHeight = scaledPx(R.dimen.following_selected_height_tv)
+            val selectedMarginEnd = scaledPx(R.dimen.following_selected_margin_end_tv)
             val selectedLp = binding.vSelected.layoutParams as? ViewGroup.MarginLayoutParams
             if (selectedLp != null) {
                 if (selectedLp.width != selectedWidth || selectedLp.height != selectedHeight || selectedLp.marginEnd != selectedMarginEnd) {
@@ -158,7 +154,7 @@ class FollowingAdapter(
                 }
             }
 
-            val avatarSize = scaledPx(if (tvMode) R.dimen.following_avatar_size_tv else R.dimen.following_avatar_size).coerceAtLeast(1)
+            val avatarSize = scaledPx(R.dimen.following_avatar_size_tv).coerceAtLeast(1)
             val avatarLp = binding.ivAvatar.layoutParams
             if (avatarLp.width != avatarSize || avatarLp.height != avatarSize) {
                 avatarLp.width = avatarSize
@@ -168,7 +164,7 @@ class FollowingAdapter(
 
             val nameLp = binding.tvName.layoutParams as? ViewGroup.MarginLayoutParams
             if (nameLp != null) {
-                val ms = scaledPx(if (tvMode) R.dimen.following_name_margin_start_tv else R.dimen.following_name_margin_start)
+                val ms = scaledPx(R.dimen.following_name_margin_start_tv)
                 if (nameLp.marginStart != ms || nameLp.height != avatarSize) {
                     nameLp.marginStart = ms
                     nameLp.height = avatarSize
@@ -177,7 +173,7 @@ class FollowingAdapter(
             }
             binding.tvName.setTextSize(
                 TypedValue.COMPLEX_UNIT_PX,
-                scaledPxF(if (tvMode) R.dimen.following_name_text_size_tv else R.dimen.following_name_text_size),
+                scaledPxF(R.dimen.following_name_text_size_tv),
             )
         }
     }

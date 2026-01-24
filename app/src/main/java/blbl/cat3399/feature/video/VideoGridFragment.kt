@@ -17,7 +17,6 @@ import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
 import blbl.cat3399.feature.player.PlayerPlaylistItem
@@ -89,7 +88,6 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                     },
                 )
         }
-        adapter.setTvMode(TvMode.isEnabled(requireContext()))
         binding.recycler.adapter = adapter
         binding.recycler.setHasFixedSize(true)
         binding.recycler.layoutManager = GridLayoutManager(requireContext(), spanCountForWidth())
@@ -239,7 +237,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     override fun onResume() {
         super.onResume()
         AppLog.d("VideoGrid", "onResume source=$source rid=$rid t=${SystemClock.uptimeMillis()}")
-        if (this::adapter.isInitialized) adapter.setTvMode(TvMode.isEnabled(requireContext()))
+        if (this::adapter.isInitialized) adapter.invalidateSizing()
         (binding.recycler.layoutManager as? GridLayoutManager)?.spanCount = spanCountForWidth()
         maybeTriggerInitialLoad()
         maybeConsumePendingFocusFirstCard()

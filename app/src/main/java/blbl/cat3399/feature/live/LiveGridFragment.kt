@@ -15,7 +15,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
-import blbl.cat3399.core.tv.TvMode
+import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -71,7 +71,6 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                 }
         }
 
-        adapter.setTvMode(TvMode.isEnabled(requireContext()))
         binding.recycler.adapter = adapter
         binding.recycler.setHasFixedSize(true)
         binding.recycler.layoutManager = GridLayoutManager(requireContext(), spanCountForWidth())
@@ -190,7 +189,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
 
     override fun onResume() {
         super.onResume()
-        if (this::adapter.isInitialized) adapter.setTvMode(TvMode.isEnabled(requireContext()))
+        if (this::adapter.isInitialized) adapter.invalidateSizing()
         updateRecyclerSpanCountIfNeeded(force = true)
         maybeTriggerInitialLoad()
         maybeConsumePendingFocusFirstCard()
@@ -307,7 +306,8 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
     private fun autoSpanCountForWidthDp(widthDp: Float): Int {
         val override = blbl.cat3399.core.net.BiliClient.prefs.gridSpanCount
         if (override > 0) return override.coerceIn(1, 6)
-        val minCardWidthDp = if (TvMode.isEnabled(requireContext())) 210f else 168f
+        val uiScale = UiScale.factor(requireContext())
+        val minCardWidthDp = 210f * uiScale
         val auto = (widthDp / minCardWidthDp).toInt()
         return auto.coerceIn(2, 6)
     }

@@ -17,7 +17,6 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.R
 import blbl.cat3399.core.net.BiliClient
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentMyFavFolderDetailBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
@@ -83,7 +82,6 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
                     },
                 )
         }
-        adapter.setTvMode(TvMode.isEnabled(requireContext()))
         binding.recycler.adapter = adapter
         binding.recycler.setHasFixedSize(true)
         binding.recycler.layoutManager = GridLayoutManager(requireContext(), spanCountForWidth(resources))
@@ -215,20 +213,17 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
     override fun onResume() {
         super.onResume()
         applyBackButtonSizing()
-        if (this::adapter.isInitialized) adapter.setTvMode(TvMode.isEnabled(requireContext()))
+        if (this::adapter.isInitialized) adapter.invalidateSizing()
         (binding.recycler.layoutManager as? GridLayoutManager)?.spanCount = spanCountForWidth(resources)
     }
 
     private fun applyBackButtonSizing() {
-        val tvMode = TvMode.isEnabled(requireContext())
-        val sidebarScale =
-            (UiScale.factor(requireContext(), tvMode, BiliClient.prefs.sidebarSize) * if (tvMode) 1.0f else 1.20f)
-                .coerceIn(0.60f, 1.40f)
+        val sidebarScale = UiScale.factor(requireContext(), BiliClient.prefs.sidebarSize)
         fun px(id: Int): Int = resources.getDimensionPixelSize(id)
         fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
 
-        val sizePx = scaledPx(if (tvMode) R.dimen.sidebar_settings_size_tv else R.dimen.sidebar_settings_size).coerceAtLeast(1)
-        val padPx = scaledPx(if (tvMode) R.dimen.sidebar_settings_padding_tv else R.dimen.sidebar_settings_padding)
+        val sizePx = scaledPx(R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
+        val padPx = scaledPx(R.dimen.sidebar_settings_padding_tv)
 
         val lp = binding.btnBack.layoutParams
         if (lp.width != sizePx || lp.height != sizePx) {

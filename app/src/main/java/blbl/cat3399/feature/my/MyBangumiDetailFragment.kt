@@ -16,7 +16,6 @@ import blbl.cat3399.core.image.ImageUrl
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiEpisode
 import blbl.cat3399.core.net.BiliClient
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.FragmentMyBangumiDetailBinding
@@ -100,17 +99,14 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
 
     private fun applyBackButtonSizing() {
         val b = _binding ?: return
-        val tvMode = TvMode.isEnabled(requireContext())
-        val sidebarScale =
-            (UiScale.factor(requireContext(), tvMode, BiliClient.prefs.sidebarSize) * if (tvMode) 1.0f else 1.20f)
-                .coerceIn(0.60f, 1.40f)
+        val sidebarScale = UiScale.factor(requireContext(), BiliClient.prefs.sidebarSize)
         fun px(id: Int): Int = b.root.resources.getDimensionPixelSize(id)
         fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
 
         val sizePx =
-            scaledPx(if (tvMode) blbl.cat3399.R.dimen.sidebar_settings_size_tv else blbl.cat3399.R.dimen.sidebar_settings_size).coerceAtLeast(1)
+            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
         val padPx =
-            scaledPx(if (tvMode) blbl.cat3399.R.dimen.sidebar_settings_padding_tv else blbl.cat3399.R.dimen.sidebar_settings_padding)
+            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_padding_tv)
 
         val lp = b.btnBack.layoutParams
         if (lp.width != sizePx || lp.height != sizePx) {

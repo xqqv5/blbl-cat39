@@ -13,14 +13,13 @@ class SearchKeyAdapter(
     private val onClick: (String) -> Unit,
 ) : RecyclerView.Adapter<SearchKeyAdapter.Vh>() {
     private val items = ArrayList<String>()
-    private var tvMode: Boolean = false
 
     init {
         setHasStableIds(true)
     }
 
-    fun setTvMode(enabled: Boolean) {
-        tvMode = enabled
+    fun invalidateSizing() {
+        if (itemCount <= 0) return
         notifyItemRangeChanged(0, itemCount)
     }
 
@@ -38,13 +37,12 @@ class SearchKeyAdapter(
     }
 
     override fun onBindViewHolder(holder: Vh, position: Int) {
-        holder.bind(items[position], tvMode, onClick)
+        holder.bind(items[position], onClick)
     }
 
     override fun getItemCount(): Int = items.size
 
     class Vh(private val binding: ItemSearchKeyBinding) : RecyclerView.ViewHolder(binding.root) {
-        private var lastTvMode: Boolean? = null
         private var lastUiScale: Float? = null
         private var baseHeight: Int? = null
         private var baseMargins: IntArray? = null
@@ -52,11 +50,10 @@ class SearchKeyAdapter(
         private var baseCornerRadiusPx: Float? = null
         private var baseStrokeWidthPx: Int? = null
 
-        fun bind(label: String, tvMode: Boolean, onClick: (String) -> Unit) {
-            val uiScale = UiScale.factor(binding.root.context, tvMode)
-            if (lastTvMode != tvMode || lastUiScale != uiScale) {
+        fun bind(label: String, onClick: (String) -> Unit) {
+            val uiScale = UiScale.factor(binding.root.context)
+            if (lastUiScale != uiScale) {
                 applySizing(uiScale)
-                lastTvMode = tvMode
                 lastUiScale = uiScale
             }
             binding.tvLabel.text = label

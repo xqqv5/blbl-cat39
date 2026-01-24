@@ -39,7 +39,7 @@
     <dimen name="video_card_title_text_size">14sp</dimen>
     <dimen name="video_card_subtitle_text_size">12sp</dimen>
 
-    <!-- TV mode overrides (applied at runtime via TvMode) -->
+    <!-- Baseline (1080p@1.5) dimens (legacy *_tv names kept) -->
     <dimen name="sidebar_user_size_tv">48dp</dimen>
     <dimen name="sidebar_user_margin_top_tv">12dp</dimen>
     <dimen name="sidebar_login_size_tv">56dp</dimen>
@@ -175,12 +175,9 @@
     <dimen name="player_seekbar_height">5dp</dimen>
     <dimen name="player_seekbar_height_tv">5dp</dimen>
     <!-- SeekBar view/Thumb is 5dp; track is thinner (see player_seekbar_track_height). -->
-    <dimen name="player_seekbar_track_height">4dp</dimen>
-    <dimen name="player_seekbar_track_height_tv">5dp</dimen>
-    <dimen name="player_seekbar_corner_radius">2dp</dimen>
-    <dimen name="player_seekbar_corner_radius_tv">2.5dp</dimen>
+    <dimen name="player_seekbar_track_height">5dp</dimen>
+    <dimen name="player_seekbar_corner_radius">2.5dp</dimen>
     <dimen name="player_persistent_progress_height">2dp</dimen>
-    <dimen name="player_persistent_progress_height_tv">2dp</dimen>
     <!-- With expanded SeekBar touch height, reduce bottom margin so visual gap stays the same. -->
     <dimen name="player_seekbar_margin_bottom">2.5dp</dimen>
     <dimen name="player_seekbar_margin_bottom_tv">6.5dp</dimen>

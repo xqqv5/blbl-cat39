@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Resources
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,7 +17,6 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -24,7 +24,7 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.BuildConfig
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
-import blbl.cat3399.core.tv.TvMode
+import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.SingleChoiceDialog
@@ -46,7 +46,7 @@ import java.util.ArrayDeque
 import java.util.Locale
 import kotlin.math.roundToInt
 
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : BaseActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private var currentSectionIndex: Int = -1
     private lateinit var leftAdapter: SettingsLeftAdapter
@@ -172,28 +172,24 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun applyUiMode() {
-        val tvMode = TvMode.isEnabled(this)
-        val widthDp = if (tvMode) 320f else 220f
-        val widthPx = dp(widthDp)
+        val uiScale = UiScale.factor(this, BiliClient.prefs.sidebarSize)
+        val widthPx = (dp(320f) * uiScale).roundToInt().coerceAtLeast(1)
         val lp = binding.recyclerLeft.layoutParams
         if (lp.width != widthPx) {
             lp.width = widthPx
             binding.recyclerLeft.layoutParams = lp
         }
 
-        val sidebarScale =
-            (UiScale.factor(this, tvMode, BiliClient.prefs.sidebarSize) * if (tvMode) 1.0f else 1.20f)
-                .coerceIn(0.60f, 1.40f)
         fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
+        fun scaledPx(id: Int): Int = (px(id) * uiScale).roundToInt().coerceAtLeast(0)
 
         val backSizePx =
             scaledPx(
-                if (tvMode) blbl.cat3399.R.dimen.sidebar_settings_size_tv else blbl.cat3399.R.dimen.sidebar_settings_size,
+                blbl.cat3399.R.dimen.sidebar_settings_size_tv,
             ).coerceAtLeast(1)
         val backPadPx =
             scaledPx(
-                if (tvMode) blbl.cat3399.R.dimen.sidebar_settings_padding_tv else blbl.cat3399.R.dimen.sidebar_settings_padding,
+                blbl.cat3399.R.dimen.sidebar_settings_padding_tv,
             )
 
         val backLp = binding.btnBack.layoutParams
@@ -265,7 +261,6 @@ class SettingsActivity : AppCompatActivity() {
                 SettingEntry("动态页每行卡片数量", gridSpanText(prefs.dynamicGridSpanCount), null),
                 SettingEntry("番剧/电视剧每行卡片数量", gridSpanText(prefs.pgcGridSpanCount), null),
                 SettingEntry("界面大小", sidebarSizeText(prefs.sidebarSize), null),
-                SettingEntry("TV 模式", tvModeText(prefs.uiMode), null),
                 SettingEntry("以全屏模式运行", if (prefs.fullscreenEnabled) "开" else "关", null),
             )
 
@@ -365,24 +360,6 @@ class SettingsActivity : AppCompatActivity() {
                 Immersive.apply(this, prefs.fullscreenEnabled)
                 Toast.makeText(this, "全屏：${if (prefs.fullscreenEnabled) "开" else "关"}", Toast.LENGTH_SHORT).show()
                 refreshSection(entry.title)
-            }
-
-            "TV 模式" -> {
-                val options = listOf("自动", "开", "关")
-                showChoiceDialog(
-                    title = "TV 模式",
-                    items = options,
-                    current = tvModeText(prefs.uiMode),
-                ) { selected ->
-                    prefs.uiMode =
-                        when (selected) {
-                            "开" -> blbl.cat3399.core.prefs.AppPrefs.UI_MODE_TV
-                            "关" -> blbl.cat3399.core.prefs.AppPrefs.UI_MODE_NORMAL
-                            else -> blbl.cat3399.core.prefs.AppPrefs.UI_MODE_AUTO
-                        }
-                    Toast.makeText(this, "TV 模式：$selected", Toast.LENGTH_SHORT).show()
-                    recreate()
-                }
             }
 
             "界面大小" -> {
@@ -1330,12 +1307,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun gridSpanText(span: Int): String = if (span <= 0) "自动" else span.toString()
 
-    private fun tvModeText(mode: String): String = when (mode) {
-        blbl.cat3399.core.prefs.AppPrefs.UI_MODE_TV -> "开"
-        blbl.cat3399.core.prefs.AppPrefs.UI_MODE_NORMAL -> "关"
-        else -> "自动"
-    }
-
     private fun sidebarSizeText(prefValue: String): String = when (prefValue) {
         blbl.cat3399.core.prefs.AppPrefs.SIDEBAR_SIZE_SMALL -> "小"
         blbl.cat3399.core.prefs.AppPrefs.SIDEBAR_SIZE_LARGE -> "大"
@@ -1359,10 +1330,14 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun screenText(): String {
-        val dm = resources.displayMetrics
-        val width = dm.widthPixels
-        val height = dm.heightPixels
-        val scale = dm.density
+        val uiDm = resources.displayMetrics
+        val width = uiDm.widthPixels
+        val height = uiDm.heightPixels
+
+        val sysDm = Resources.getSystem().displayMetrics
+        val sysScale = sysDm.density
+        val uiScale = uiDm.density
+
         val refreshHz =
             runCatching {
                 @Suppress("DEPRECATION")
@@ -1370,8 +1345,10 @@ class SettingsActivity : AppCompatActivity() {
             }.getOrNull() ?: 0f
 
         val hzText = if (refreshHz > 0f) String.format(Locale.US, "%.0fHz", refreshHz) else "-"
-        val scaleText = String.format(Locale.US, "x%.2f", scale)
-        return "${width}×${height} ${hzText} ${scaleText}"
+        val sysText = String.format(Locale.US, "sys x%.2f(%ddpi)", sysScale, sysDm.densityDpi)
+        val uiText = String.format(Locale.US, "ui x%.2f(%ddpi)", uiScale, uiDm.densityDpi)
+        val factorText = String.format(Locale.US, "f x%.2f", UiScale.deviceFactor(this))
+        return "${width}×${height} ${hzText} ${sysText} ${uiText} ${factorText}"
     }
 
     private fun ramText(): String {

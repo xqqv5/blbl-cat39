@@ -7,7 +7,6 @@ import android.view.ViewGroup.MarginLayoutParams
 import blbl.cat3399.R
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import kotlin.math.roundToInt
 
@@ -19,21 +18,12 @@ object PlayerOsdSizing {
     }
 
     fun applyTheme(activity: Activity) {
-        val tvMode = TvMode.isEnabled(activity)
         val tier = tierFromPref(BiliClient.prefs.sidebarSize)
         val overlay =
-            if (tvMode) {
-                when (tier) {
-                    SizeTier.SMALL -> R.style.ThemeOverlay_Blbl_PlayerOsd_Tv_Small
-                    SizeTier.MEDIUM -> R.style.ThemeOverlay_Blbl_PlayerOsd_Tv_Medium
-                    SizeTier.LARGE -> R.style.ThemeOverlay_Blbl_PlayerOsd_Tv_Large
-                }
-            } else {
-                when (tier) {
-                    SizeTier.SMALL -> R.style.ThemeOverlay_Blbl_PlayerOsd_Normal_Small
-                    SizeTier.MEDIUM -> R.style.ThemeOverlay_Blbl_PlayerOsd_Normal_Medium
-                    SizeTier.LARGE -> R.style.ThemeOverlay_Blbl_PlayerOsd_Normal_Large
-                }
+            when (tier) {
+                SizeTier.SMALL -> R.style.ThemeOverlay_Blbl_PlayerOsd_Normal_Small
+                SizeTier.MEDIUM -> R.style.ThemeOverlay_Blbl_PlayerOsd_Normal_Medium
+                SizeTier.LARGE -> R.style.ThemeOverlay_Blbl_PlayerOsd_Normal_Large
             }
         activity.theme.applyStyle(overlay, true)
     }

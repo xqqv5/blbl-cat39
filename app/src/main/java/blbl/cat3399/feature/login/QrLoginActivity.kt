@@ -3,12 +3,12 @@ package blbl.cat3399.feature.login
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.KeyEvent
-import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.net.AppSigner
 import blbl.cat3399.core.net.WebCookieMaintainer
+import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.databinding.ActivityQrLoginBinding
 import com.google.zxing.BarcodeFormat
@@ -25,7 +25,7 @@ import org.json.JSONObject
 import kotlin.math.max
 import kotlin.math.min
 
-class QrLoginActivity : AppCompatActivity() {
+class QrLoginActivity : BaseActivity() {
     private lateinit var binding: ActivityQrLoginBinding
     private var pollJob: Job? = null
     private val tvLoginUserAgent =

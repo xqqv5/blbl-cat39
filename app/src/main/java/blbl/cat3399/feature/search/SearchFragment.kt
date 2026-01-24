@@ -28,7 +28,6 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiSeason
 import blbl.cat3399.core.net.BiliClient
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.enableDpadTabFocus
@@ -69,7 +68,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     private var history: List<String> = emptyList()
 
     private var suggestJob: Job? = null
-    private var isTvMode: Boolean = false
     private var ignoreQueryTextChanges: Boolean = false
 
     private var lastFocusedKeyPos: Int = 0
@@ -134,7 +132,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     }
 
     private fun setupInput() {
-        isTvMode = TvMode.isEnabled(requireContext())
         setupQueryInput()
 
         keyAdapter = SearchKeyAdapter { key ->
@@ -149,9 +146,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
             setQuery(keyword)
             performSearch()
         }
-        keyAdapter.setTvMode(isTvMode)
-        suggestAdapter.setTvMode(isTvMode)
-        hotAdapter.setTvMode(isTvMode)
 
         binding.recyclerKeys.adapter = keyAdapter
         binding.recyclerKeys.layoutManager = androidx.recyclerview.widget.GridLayoutManager(requireContext(), 6)
@@ -374,54 +368,35 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
             setQueryFromTextInput(it?.toString().orEmpty())
         }
 
-        if (isTvMode) {
-            input.apply {
-                // TV mode defaults to on-screen keyboard + DPAD navigation.
-                // Keep IME disabled on focus, but allow touch users to explicitly open the IME.
-                isFocusable = false
-                isFocusableInTouchMode = false
-                isCursorVisible = false
-                isLongClickable = false
-                setTextIsSelectable(false)
-                showSoftInputOnFocus = false
-                setOnClickListener(null)
-                setOnFocusChangeListener(null)
-            }
-
-            input.setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_UP) {
-                    if (binding.panelResults.visibility == View.VISIBLE) showInput()
-
-                    // Enable focus + editing only when the user explicitly touches the input.
-                    input.isFocusable = true
-                    input.isFocusableInTouchMode = true
-                    input.isCursorVisible = true
-                    input.isLongClickable = true
-                    input.setTextIsSelectable(true)
-
-                    input.requestFocus()
-                    input.setSelection(input.text?.length ?: 0)
-                    showIme(input)
-                }
-                false
-            }
-            return
+        input.apply {
+            // Defaults to on-screen keyboard + DPAD navigation.
+            // Keep IME disabled on focus, but allow touch users to explicitly open the IME.
+            isFocusable = false
+            isFocusableInTouchMode = false
+            isCursorVisible = false
+            isLongClickable = false
+            setTextIsSelectable(false)
+            showSoftInputOnFocus = false
+            setOnClickListener(null)
+            setOnFocusChangeListener(null)
         }
 
-        input.setOnTouchListener(null)
-        input.showSoftInputOnFocus = true
-        input.isFocusable = true
-        input.isFocusableInTouchMode = true
+        input.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                if (binding.panelResults.visibility == View.VISIBLE) showInput()
 
-        input.setOnClickListener {
-            if (binding.panelResults.visibility == View.VISIBLE) showInput()
-            input.requestFocus()
-            input.setSelection(input.text?.length ?: 0)
-            showIme(input)
-        }
+                // Enable focus + editing only when the user explicitly touches the input.
+                input.isFocusable = true
+                input.isFocusableInTouchMode = true
+                input.isCursorVisible = true
+                input.isLongClickable = true
+                input.setTextIsSelectable(true)
 
-        input.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) input.post { showIme(input) }
+                input.requestFocus()
+                input.setSelection(input.text?.length ?: 0)
+                showIme(input)
+            }
+            false
         }
     }
 
@@ -462,7 +437,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
                     true
                 },
             )
-        videoAdapter.setTvMode(isTvMode)
 
         if (!::mediaAdapter.isInitialized) {
             mediaAdapter =
@@ -498,10 +472,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
                     )
                 }
         }
-
-        mediaAdapter.setTvMode(isTvMode)
-        liveAdapter.setTvMode(isTvMode)
-        userAdapter.setTvMode(isTvMode)
 
         binding.recyclerResults.adapter = adapterForTab(currentTabIndex)
         binding.recyclerResults.setHasFixedSize(true)
@@ -1275,14 +1245,13 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 
     override fun onResume() {
         super.onResume()
-        isTvMode = TvMode.isEnabled(requireContext())
-        videoAdapter.setTvMode(isTvMode)
-        keyAdapter.setTvMode(isTvMode)
-        suggestAdapter.setTvMode(isTvMode)
-        hotAdapter.setTvMode(isTvMode)
-        mediaAdapter.setTvMode(isTvMode)
-        liveAdapter.setTvMode(isTvMode)
-        userAdapter.setTvMode(isTvMode)
+        videoAdapter.invalidateSizing()
+        keyAdapter.invalidateSizing()
+        suggestAdapter.invalidateSizing()
+        hotAdapter.invalidateSizing()
+        mediaAdapter.invalidateSizing()
+        liveAdapter.invalidateSizing()
+        userAdapter.invalidateSizing()
         applyUiScale()
         (binding.recyclerResults.layoutManager as? GridLayoutManager)?.spanCount = spanCountForCurrentTab()
         maybeConsumePendingFocusFirstResultCardFromTabSwitch()
@@ -1331,7 +1300,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 
     private fun applyUiScale() {
         val b = _binding ?: return
-        val newScale = UiScale.factor(requireContext(), isTvMode)
+        val newScale = UiScale.factor(requireContext())
         val oldScale = lastAppliedUiScale ?: 1.0f
         if (newScale == oldScale) return
 

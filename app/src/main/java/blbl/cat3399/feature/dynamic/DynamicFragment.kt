@@ -17,7 +17,6 @@ import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
-import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentDynamicBinding
 import blbl.cat3399.databinding.FragmentDynamicLoginBinding
@@ -80,7 +79,6 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
         followAdapter = FollowingAdapter(::onFollowingClicked)
         binding.recyclerFollowing.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerFollowing.adapter = followAdapter
-        followAdapter.setTvMode(TvMode.isEnabled(requireContext()))
         binding.recyclerFollowing.clearOnScrollListeners()
         binding.recyclerFollowing.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
@@ -171,7 +169,6 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
                     true
                 },
             )
-        videoAdapter.setTvMode(TvMode.isEnabled(requireContext()))
         binding.recyclerDynamic.setHasFixedSize(true)
         binding.recyclerDynamic.layoutManager = GridLayoutManager(requireContext(), spanCountForWidth())
         binding.recyclerDynamic.adapter = videoAdapter
@@ -580,8 +577,8 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
     override fun onResume() {
         super.onResume()
         applyUiMode()
-        if (this::videoAdapter.isInitialized) videoAdapter.setTvMode(TvMode.isEnabled(requireContext()))
-        if (this::followAdapter.isInitialized) followAdapter.setTvMode(TvMode.isEnabled(requireContext()))
+        if (this::videoAdapter.isInitialized) videoAdapter.invalidateSizing()
+        if (this::followAdapter.isInitialized) followAdapter.invalidateSizing()
         (_binding?.recyclerDynamic?.layoutManager as? GridLayoutManager)?.spanCount = spanCountForWidth()
     }
 
@@ -602,23 +599,22 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
 
     private fun applyUiMode() {
         val binding = _binding ?: return
-        val tvMode = TvMode.isEnabled(requireContext())
-        val uiScale = UiScale.factor(requireContext(), tvMode)
+        val uiScale = UiScale.factor(requireContext())
 
         fun px(id: Int): Int = resources.getDimensionPixelSize(id)
         fun scaledPx(id: Int): Int = (px(id) * uiScale).roundToInt().coerceAtLeast(0)
 
         val width =
             scaledPx(
-                if (tvMode) blbl.cat3399.R.dimen.dynamic_following_panel_width_tv else blbl.cat3399.R.dimen.dynamic_following_panel_width,
+                blbl.cat3399.R.dimen.dynamic_following_panel_width_tv,
             )
         val margin =
             scaledPx(
-                if (tvMode) blbl.cat3399.R.dimen.dynamic_following_panel_margin_tv else blbl.cat3399.R.dimen.dynamic_following_panel_margin,
+                blbl.cat3399.R.dimen.dynamic_following_panel_margin_tv,
             )
         val padding =
             scaledPx(
-                if (tvMode) blbl.cat3399.R.dimen.dynamic_following_list_padding_tv else blbl.cat3399.R.dimen.dynamic_following_list_padding,
+                blbl.cat3399.R.dimen.dynamic_following_list_padding_tv,
             )
 
         val cardLp = binding.cardFollowing.layoutParams

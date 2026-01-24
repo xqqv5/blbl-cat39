@@ -1,18 +1,22 @@
 package blbl.cat3399.feature.following
 
-import android.content.res.Resources
+import android.content.Context
 import blbl.cat3399.R
+import blbl.cat3399.core.ui.UiScale
+import kotlin.math.roundToInt
 
-fun followingSpanCountForWidth(resources: Resources, tvMode: Boolean): Int {
+fun followingSpanCountForWidth(context: Context): Int {
+    val resources = context.resources
     val dm = resources.displayMetrics
     val widthPx = dm.widthPixels
     val recyclerPaddingPx = (8f * dm.density).toInt() * 2 // activity_following_list.xml recycler padding=8dp
     val availablePx = (widthPx - recyclerPaddingPx).coerceAtLeast(1)
 
-    fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-    val itemMargin = px(if (tvMode) R.dimen.following_grid_item_margin_tv else R.dimen.following_grid_item_margin)
-    val itemPadding = px(if (tvMode) R.dimen.following_grid_item_padding_tv else R.dimen.following_grid_item_padding)
-    val avatarSize = px(if (tvMode) R.dimen.following_grid_avatar_size_tv else R.dimen.following_grid_avatar_size)
+    val uiScale = UiScale.factor(context)
+    fun scaledPx(id: Int): Int = (resources.getDimensionPixelSize(id) * uiScale).roundToInt().coerceAtLeast(0)
+    val itemMargin = scaledPx(R.dimen.following_grid_item_margin_tv)
+    val itemPadding = scaledPx(R.dimen.following_grid_item_padding_tv)
+    val avatarSize = scaledPx(R.dimen.following_grid_avatar_size_tv)
 
     // Match item_following_grid + FollowingGridAdapter sizing:
     // columnWidth >= left/right margins + left/right padding + avatarSize
@@ -20,6 +24,6 @@ fun followingSpanCountForWidth(resources: Resources, tvMode: Boolean): Int {
     val raw = (availablePx / minItemWidthPx).coerceAtLeast(1)
 
     // Avoid becoming overly dense on very wide screens.
-    val maxSpan = if (tvMode) 14 else 12
+    val maxSpan = 14
     return raw.coerceAtMost(maxSpan)
 }
