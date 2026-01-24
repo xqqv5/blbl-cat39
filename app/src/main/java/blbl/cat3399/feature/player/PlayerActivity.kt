@@ -1575,6 +1575,15 @@ class PlayerActivity : BaseActivity() {
 
             KeyEvent.KEYCODE_DPAD_UP -> {
                 if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                // TV-style shortcut: when OSD is hidden, UP directly opens the playlist (video list)
+                // instead of first bringing up the OSD.
+                if (!controlsVisible) {
+                    val hasPlaylist = playlistItems.isNotEmpty() && playlistIndex in playlistItems.indices
+                    if (hasPlaylist) {
+                        showPlaylistDialog()
+                        return true
+                    }
+                }
                 setControlsVisible(true)
                 if (!binding.seekProgress.isFocused) {
                     focusSeekBar()
@@ -1875,7 +1884,8 @@ class PlayerActivity : BaseActivity() {
         updateDanmakuButton()
         updateUpButton()
         updatePlaylistControls()
-        setControlsVisible(true)
+        // Do not auto-show OSD when opening the player; user interaction will bring it up.
+        setControlsVisible(false)
         startProgressLoop()
     }
 
