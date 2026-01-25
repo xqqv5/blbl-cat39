@@ -706,7 +706,7 @@ class PlayerActivity : BaseActivity() {
                 initialTitle = picked.title.takeIf { it.isNotBlank() },
             )
             setControlsVisible(true)
-            focusFirstControl()
+            binding.btnRecommend.post { binding.btnRecommend.requestFocus() }
         }
     }
 

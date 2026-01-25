@@ -6,6 +6,7 @@ import androidx.core.content.FileProvider
 import blbl.cat3399.BuildConfig
 import blbl.cat3399.core.net.await
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -13,6 +14,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
@@ -77,9 +79,33 @@ object TestApkUpdater {
     suspend fun fetchLatestVersionName(
         url: String = TEST_APK_VERSION_URL,
     ): String {
+        // Entering Settings -> About triggers an automatic check. On some networks/devices the first request
+        // may fail transiently but succeeds immediately when retried (e.g. connection warm-up / route setup).
+        return withContext(Dispatchers.IO) {
+            var lastError: Throwable? = null
+            val maxAttempts = 3
+            for (attempt in 1..maxAttempts) {
+                ensureActive()
+                try {
+                    return@withContext fetchLatestVersionNameOnce(url)
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    lastError = t
+                    val shouldRetry =
+                        attempt < maxAttempts &&
+                            (t is IOException || t.message?.startsWith("HTTP ") == true)
+                    if (!shouldRetry) throw t
+                    delay(400L * attempt)
+                }
+            }
+            throw lastError ?: IllegalStateException("fetch latest version failed")
+        }
+    }
+
+    private fun fetchLatestVersionNameOnce(url: String): String {
         val req = Request.Builder().url(url).get().build()
         val call = okHttp.newCall(req)
-        val res = call.await()
+        val res = call.execute()
         res.use { r ->
             check(r.isSuccessful) { "HTTP ${r.code} ${r.message}" }
             val body = r.body ?: error("empty body")
