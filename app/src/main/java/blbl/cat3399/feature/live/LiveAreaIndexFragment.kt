@@ -197,8 +197,13 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
     }
 
     override fun restoreFocusAfterReturnFromDetail(): Boolean {
+        // Same idea as "MyFavFoldersFragment": keep a pending position and restore focus after
+        // returning from detail. ViewPager2 may destroy/recreate page views when we hide it, so we
+        // must not drop the pending position too early.
+        if (pendingRestorePosition == null) return false
         if (!isResumed) return true
-        return restoreFocusIfNeeded()
+        restoreFocusIfNeeded()
+        return true
     }
 
     private fun restoreFocusIfNeeded(): Boolean {
@@ -206,7 +211,18 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         if (!isAdded || _binding == null) return false
         if (!isResumed) return false
         if (!this::adapter.isInitialized) return false
-        if (pos < 0 || pos >= adapter.itemCount) {
+
+        if (pos < 0) {
+            pendingRestorePosition = null
+            return false
+        }
+
+        val itemCount = adapter.itemCount
+        // When returning from detail, the page view may be recreated and data might not be bound yet.
+        // Keep the pending position so we can retry after reload().
+        if (itemCount == 0) return false
+        // Data changed; give up to avoid blocking other focus flows forever.
+        if (pos >= itemCount) {
             pendingRestorePosition = null
             return false
         }
@@ -217,12 +233,33 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
             recycler.scrollToPosition(pos)
             recycler.post innerPost@{
                 if (_binding == null) return@innerPost
-                recycler.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-                    ?: recycler.requestFocus()
-                pendingRestorePosition = null
+                tryRestoreFocusAtPosition(recycler = recycler, pos = pos, attemptsLeft = 3)
             }
         }
         return true
+    }
+
+    private fun tryRestoreFocusAtPosition(recycler: RecyclerView, pos: Int, attemptsLeft: Int) {
+        if (!isAdded || _binding == null || !isResumed) return
+        if (pendingRestorePosition != pos) return
+
+        val vh = recycler.findViewHolderForAdapterPosition(pos)
+        if (vh != null) {
+            vh.itemView.requestFocus()
+            pendingRestorePosition = null
+            return
+        }
+
+        if (attemptsLeft <= 0) {
+            // Fallback: keep focus visible even if the target view isn't laid out yet.
+            recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() == true ||
+                focusSelectedTabIfAvailable() ||
+                recycler.requestFocus()
+            pendingRestorePosition = null
+            return
+        }
+
+        recycler.post { tryRestoreFocusAtPosition(recycler = recycler, pos = pos, attemptsLeft = attemptsLeft - 1) }
     }
 
     private fun maybeConsumePendingFocusFirstCard(): Boolean {
@@ -317,7 +354,6 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
 
     override fun onDestroyView() {
         initialLoadTriggered = false
-        pendingRestorePosition = null
         _binding = null
         super.onDestroyView()
     }
