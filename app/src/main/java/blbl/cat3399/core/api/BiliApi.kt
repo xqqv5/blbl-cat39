@@ -1573,6 +1573,24 @@ object BiliApi {
                 }
                 out
             }
+
+        val userProgress = result.optJSONObject("user_status")?.optJSONObject("progress") ?: JSONObject()
+        val rawUserLastEpId = userProgress.optLong("last_ep_id", -1L).takeIf { it > 0 }
+        val rawUserLastEpid = userProgress.optLong("last_epid", -1L).takeIf { it > 0 }
+        val rawUserLastTime = userProgress.optLong("last_time", -1L).takeIf { it > 0 }
+        val rawUserLastEpIndex =
+            userProgress.optInt("last_ep_index", -1).takeIf { it > 0 }
+                ?: userProgress.optString("last_ep_index", "").trim().toIntOrNull()?.takeIf { it > 0 }
+        val rawProgressLastEpId = result.optJSONObject("progress")?.optLong("last_ep_id", -1L)?.takeIf { it > 0 }
+        val rawResultLastEpId = result.optLong("last_ep_id", -1L).takeIf { it > 0 }
+        AppLog.i(
+            TAG,
+            "CONTINUE_DEBUG seasonDetail seasonId=$seasonId sess=${BiliClient.cookies.hasSessData()} " +
+                "user_progress.last_ep_id=${rawUserLastEpId ?: -1L} user_progress.last_epid=${rawUserLastEpid ?: -1L} " +
+                "user_progress.last_ep_index=${rawUserLastEpIndex ?: -1} user_progress.last_time=${rawUserLastTime ?: -1L} " +
+                "result.progress.last_ep_id=${rawProgressLastEpId ?: -1L} result.last_ep_id=${rawResultLastEpId ?: -1L} " +
+                "parsed=$progressLastEpId episodes=${epList.size}",
+        )
         return BangumiSeasonDetail(
             seasonId = result.optLong("season_id").takeIf { it > 0 } ?: seasonId,
             title = result.optString("title", result.optString("season_title", "")),
@@ -2020,6 +2038,56 @@ object BiliApi {
                 put("cid", cid.toString())
                 put("progress", progressSec.coerceAtLeast(0L).toString())
                 put("platform", platform)
+                put("csrf", csrf)
+            }
+        val json =
+            BiliClient.postFormJson(
+                url,
+                form = form,
+                headers = piliWebHeaders(targetUrl = url, includeCookie = true),
+                noCookies = true,
+            )
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+    }
+
+    suspend fun webHeartbeat(
+        aid: Long? = null,
+        bvid: String? = null,
+        cid: Long? = null,
+        epId: Long? = null,
+        seasonId: Long? = null,
+        playedTimeSec: Long,
+        type: Int,
+        subType: Int? = null,
+        playType: Int = 0,
+    ) {
+        val safeAid = aid?.takeIf { it > 0 }
+        val safeBvid = bvid?.trim()?.takeIf { it.isNotBlank() }
+        val safeCid = cid?.takeIf { it > 0 }
+        val safeEpId = epId?.takeIf { it > 0 }
+        val safeSeasonId = seasonId?.takeIf { it > 0 }
+        if (safeAid == null && safeBvid == null) error("heartbeat_missing_aid_bvid")
+        if (safeCid == null) error("heartbeat_missing_cid")
+        val csrf = BiliClient.cookies.getCookieValue("bili_jct").orEmpty().trim()
+        if (csrf.isBlank()) throw BiliApiException(apiCode = -111, apiMessage = "missing_csrf")
+
+        val url = "https://api.bilibili.com/x/click-interface/web/heartbeat"
+        val form =
+            buildMap {
+                safeAid?.let { put("aid", it.toString()) }
+                safeBvid?.let { put("bvid", it) }
+                put("cid", safeCid.toString())
+                safeEpId?.let { put("epid", it.toString()) }
+                safeSeasonId?.let { put("sid", it.toString()) }
+                put("played_time", playedTimeSec.coerceAtLeast(0L).toString())
+                put("type", type.toString())
+                subType?.takeIf { it > 0 }?.let { put("sub_type", it.toString()) }
+                put("dt", "2")
+                put("play_type", playType.toString())
                 put("csrf", csrf)
             }
         val json =

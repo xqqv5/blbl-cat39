@@ -1,6 +1,8 @@
 package blbl.cat3399.feature.my
 
 import android.os.Bundle
+import android.view.FocusFinder
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -40,14 +42,17 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     private lateinit var epAdapter: BangumiEpisodeAdapter
     private var currentEpisodes: List<BangumiEpisode> = emptyList()
     private var continueEpisode: BangumiEpisode? = null
+    private var episodeOrderReversed: Boolean = false
     private var pendingAutoFocusFirstEpisode: Boolean = true
     private var autoFocusAttempts: Int = 0
     private var epDataObserver: RecyclerView.AdapterDataObserver? = null
     private var pendingAutoFocusPrimary: Boolean = true
     private var loadJob: Job? = null
+    private var episodeChildAttachListener: RecyclerView.OnChildAttachStateChangeListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        episodeOrderReversed = BiliClient.prefs.pgcEpisodeOrderReversed
         pendingAutoFocusFirstEpisode = savedInstanceState == null
         pendingAutoFocusPrimary = savedInstanceState == null
     }
@@ -62,6 +67,18 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
         binding.btnSecondary.text = if (isDrama) "已追剧" else "已追番"
         applyBackButtonSizing()
 
+        updateEpisodeOrderUi()
+        binding.btnEpisodeOrder.setOnClickListener {
+            episodeOrderReversed = !episodeOrderReversed
+            BiliClient.prefs.pgcEpisodeOrderReversed = episodeOrderReversed
+            updateEpisodeOrderUi()
+            submitEpisodes()
+            // After switching order, always land on the first visible card in the new order.
+            if (!focusEpisodeById(epId = null, fallbackPosition = 0)) {
+                binding.btnEpisodeOrder.requestFocus()
+            }
+        }
+
         epAdapter =
             BangumiEpisodeAdapter { ep, pos ->
                 playEpisode(ep, pos)
@@ -75,6 +92,9 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                     tryAutoFocusPrimary()
                 }
             }.also { epAdapter.registerAdapterDataObserver(it) }
+
+        installEpisodeFocusHandlers()
+        installButtonFocusHandlers()
 
         binding.btnPrimary.setOnClickListener {
             val ep = continueEpisode ?: currentEpisodes.firstOrNull()
@@ -135,6 +155,11 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
         if (!pendingAutoFocusPrimary) return
         if (!isResumed) return
         val b = _binding ?: return
+        // If we have episodes and no "continue" target, prefer episode list focus.
+        if (continueEpisode == null && this::epAdapter.isInitialized && epAdapter.itemCount > 0) {
+            pendingAutoFocusPrimary = false
+            return
+        }
         val focused = activity?.currentFocus
         if (focused != null && isDescendantOf(focused, b.root) && focused != b.btnBack) {
             pendingAutoFocusPrimary = false
@@ -168,7 +193,8 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             pendingAutoFocusFirstEpisode = false
             return
         }
-        if (continueEpisode != null) {
+        // Don't steal focus if user has already moved inside this page.
+        if (focused != null && isDescendantOf(focused, b.root) && focused != b.btnBack && focused != b.btnPrimary) {
             pendingAutoFocusFirstEpisode = false
             return
         }
@@ -186,19 +212,25 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             if (epAdapter.itemCount <= 0) return@post
 
             val r = bb.recyclerEpisodes
+            val targetEpId = continueEpisode?.epId
+            val targetPos =
+                targetEpId?.let { id ->
+                    orderedEpisodes().indexOfFirst { it.epId == id }.takeIf { it >= 0 }
+                } ?: 0
+            val safeTargetPos = targetPos.coerceIn(0, epAdapter.itemCount - 1)
             val focused2 = activity?.currentFocus
             if (focused2 != null && isDescendantOf(focused2, r)) {
                 pendingAutoFocusFirstEpisode = false
                 return@post
             }
 
-            val success = r.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() == true
+            val success = r.findViewHolderForAdapterPosition(safeTargetPos)?.itemView?.requestFocus() == true
             if (success) {
                 pendingAutoFocusFirstEpisode = false
                 return@post
             }
 
-            r.scrollToPosition(0)
+            r.scrollToPosition(safeTargetPos)
             r.postDelayed({ tryAutoFocusFirstEpisode() }, 16)
         }
     }
@@ -221,14 +253,14 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                 }
                 b.tvMeta.text = metaParts.joinToString(" | ")
                 ImageLoader.loadInto(b.ivCover, ImageUrl.poster(detail.coverUrl))
-                currentEpisodes = detail.episodes
+                currentEpisodes = normalizeEpisodeOrder(detail.episodes)
                 continueEpisode =
                     (continueEpIdArg ?: detail.progressLastEpId)?.let { id ->
                         detail.episodes.firstOrNull { it.epId == id }
                     } ?: continueEpIndexArg?.let { idx ->
                         detail.episodes.firstOrNull { it.title.trim() == idx.toString() }
                     }
-                epAdapter.submit(detail.episodes)
+                submitEpisodes()
                 tryAutoFocusFirstEpisode()
                 tryAutoFocusPrimary()
             } catch (t: Throwable) {
@@ -237,6 +269,267 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                 context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
             }
         }
+    }
+
+    private fun updateEpisodeOrderUi() {
+        val b = _binding ?: return
+        b.tvEpisodeOrder.text =
+            getString(
+                if (episodeOrderReversed) {
+                    blbl.cat3399.R.string.my_episode_order_desc
+                } else {
+                    blbl.cat3399.R.string.my_episode_order_asc
+                },
+            )
+    }
+
+    private fun orderedEpisodes(): List<BangumiEpisode> = if (episodeOrderReversed) currentEpisodes.asReversed() else currentEpisodes
+
+    private fun normalizeEpisodeOrder(list: List<BangumiEpisode>): List<BangumiEpisode> {
+        if (list.size <= 1) return list
+
+        data class Entry(
+            val episode: BangumiEpisode,
+            val hasNumber: Boolean,
+            val number: Double,
+            val originalIndex: Int,
+        )
+
+        val entries =
+            list.mapIndexed { index, ep ->
+                val num =
+                    parseEpisodeNumber(ep.title)
+                        ?: parseEpisodeNumber(ep.longTitle)
+                Entry(
+                    episode = ep,
+                    hasNumber = num != null,
+                    number = num ?: 0.0,
+                    originalIndex = index,
+                )
+            }
+
+        // Keep non-numeric items grouped after numeric episodes, while preserving their relative order.
+        return entries
+            .sortedWith(compareBy<Entry>({ !it.hasNumber }, { it.number }, { it.originalIndex }))
+            .map { it.episode }
+    }
+
+    private fun parseEpisodeNumber(raw: String?): Double? {
+        val s = raw?.trim().orEmpty()
+        if (s.isBlank()) return null
+        s.toDoubleOrNull()?.let { return it }
+
+        // Handle titles like "第12话", "12.5", "EP12" etc.
+        val match = EP_NUMBER_REGEX.find(s) ?: return null
+        return match.value.toDoubleOrNull()
+    }
+
+    private fun submitEpisodes(anchorEpId: Long? = null) {
+        if (!this::epAdapter.isInitialized) return
+        val b = _binding ?: return
+        val list = orderedEpisodes()
+        epAdapter.submit(list)
+
+        if (anchorEpId == null) return
+        val index = list.indexOfFirst { it.epId == anchorEpId }.takeIf { it >= 0 } ?: return
+        b.recyclerEpisodes.post {
+            val bb = _binding ?: return@post
+            bb.recyclerEpisodes.scrollToPosition(index)
+        }
+    }
+
+    private fun scrollEpisodeToPosition(position: Int, requestFocus: Boolean) {
+        val b = _binding ?: return
+        val recycler = b.recyclerEpisodes
+        recycler.post outerPost@{
+            val bb = _binding ?: return@outerPost
+            bb.recyclerEpisodes.scrollToPosition(position)
+            if (!requestFocus) return@outerPost
+            requestEpisodeFocus(position = position, attempt = 0)
+        }
+    }
+
+    private fun requestEpisodeFocus(position: Int, attempt: Int) {
+        val b = _binding ?: return
+        val recycler = b.recyclerEpisodes
+        recycler.post outerPost@{
+            val bb = _binding ?: return@outerPost
+            val view = bb.recyclerEpisodes.findViewHolderForAdapterPosition(position)?.itemView
+            if (view?.requestFocus() == true) return@outerPost
+
+            if (attempt >= 30) return@outerPost
+            bb.recyclerEpisodes.scrollToPosition(position)
+            bb.recyclerEpisodes.postDelayed({ requestEpisodeFocus(position = position, attempt = attempt + 1) }, 16)
+        }
+    }
+
+    private fun focusEpisodeById(epId: Long?, fallbackPosition: Int = 0): Boolean {
+        if (!this::epAdapter.isInitialized) return false
+        val list = orderedEpisodes()
+        if (list.isEmpty()) return false
+
+        val pos =
+            epId?.let { id -> list.indexOfFirst { it.epId == id }.takeIf { it >= 0 } }
+                ?: fallbackPosition.coerceIn(0, list.size - 1)
+        scrollEpisodeToPosition(position = pos, requestFocus = true)
+        return true
+    }
+
+    private fun focusFirstEpisodeCard(): Boolean = focusEpisodeById(epId = null, fallbackPosition = 0)
+
+    private fun installButtonFocusHandlers() {
+        val b = _binding ?: return
+
+        b.btnBack.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    // Don't allow UP to escape to sidebar/global UI.
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    b.btnPrimary.requestFocus()
+                    true
+                }
+
+                else -> false
+            }
+        }
+
+        fun handleDownFromActionButtons(): Boolean {
+            if (focusFirstEpisodeCard()) return true
+            b.btnEpisodeOrder.requestFocus()
+            return true
+        }
+
+        b.btnPrimary.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    b.btnBack.requestFocus()
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_DOWN -> handleDownFromActionButtons()
+                else -> false
+            }
+        }
+        b.btnSecondary.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    b.btnBack.requestFocus()
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_DOWN -> handleDownFromActionButtons()
+                else -> false
+            }
+        }
+
+        b.btnEpisodeOrder.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    // Enter episode list; if empty, consume so we don't escape to sidebar.
+                    focusFirstEpisodeCard()
+                    true
+                }
+
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    b.btnPrimary.requestFocus()
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun installEpisodeFocusHandlers() {
+        val b = _binding ?: return
+        val recycler = b.recyclerEpisodes
+        episodeChildAttachListener?.let(recycler::removeOnChildAttachStateChangeListener)
+
+        episodeChildAttachListener =
+            object : RecyclerView.OnChildAttachStateChangeListener {
+                override fun onChildViewAttachedToWindow(view: View) {
+                    view.setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        val holder = recycler.findContainingViewHolder(view)
+                        val pos =
+                            holder?.bindingAdapterPosition
+                                ?.takeIf { it != RecyclerView.NO_POSITION }
+                        val total = recycler.adapter?.itemCount ?: 0
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                b.btnEpisodeOrder.requestFocus()
+                                true
+                            }
+
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                // Bottom edge: don't escape to sidebar/global UI.
+                                val next = view.focusSearch(View.FOCUS_DOWN)
+                                next == null || !isDescendantOf(next, b.root)
+                            }
+
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                // Keep focus inside the episode list when holding RIGHT.
+                                // We always consume the key here; letting the system perform a global focus search
+                                // can occasionally jump outside of this RecyclerView when keys are repeated.
+                                if (pos == null || total <= 0) return@setOnKeyListener false
+                                if (pos >= total - 1) return@setOnKeyListener true
+
+                                val itemView = recycler.findContainingItemView(view) ?: view
+                                val next =
+                                    FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_RIGHT)
+                                if (next != null && isDescendantOf(next, recycler)) {
+                                    if (next.requestFocus()) return@setOnKeyListener true
+                                }
+
+                                // The next card may not be laid out yet; scroll a bit to force layout and keep
+                                // focus stable inside the list, then request focus by adapter position.
+                                if (recycler.canScrollHorizontally(1)) {
+                                    val dx = (itemView.width * 0.8f).roundToInt().coerceAtLeast(1)
+                                    recycler.scrollBy(dx, 0)
+                                }
+                                recycler.post { requestEpisodeFocus(position = pos + 1, attempt = 0) }
+                                true
+                            }
+
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                // Allow LEFT from the first card to escape (e.g. to sidebar), otherwise keep in list.
+                                if (pos == null || total <= 0) return@setOnKeyListener false
+                                if (pos <= 0) return@setOnKeyListener false
+
+                                val itemView = recycler.findContainingItemView(view) ?: view
+                                val next =
+                                    FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_LEFT)
+                                if (next != null && isDescendantOf(next, recycler)) {
+                                    if (next.requestFocus()) return@setOnKeyListener true
+                                }
+
+                                if (recycler.canScrollHorizontally(-1)) {
+                                    val dx = (itemView.width * 0.8f).roundToInt().coerceAtLeast(1)
+                                    recycler.scrollBy(-dx, 0)
+                                }
+                                recycler.post { requestEpisodeFocus(position = pos - 1, attempt = 0) }
+                                true
+                            }
+
+                            else -> false
+                        }
+                    }
+                }
+
+                override fun onChildViewDetachedFromWindow(view: View) {
+                    view.setOnKeyListener(null)
+                    view.onFocusChangeListener = null
+                }
+            }.also(recycler::addOnChildAttachStateChangeListener)
     }
 
     private fun playEpisode(ep: BangumiEpisode, pos: Int) {
@@ -280,6 +573,10 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             epDataObserver?.let { epAdapter.unregisterAdapterDataObserver(it) }
         }
         epDataObserver = null
+        episodeChildAttachListener?.let { l ->
+            _binding?.recyclerEpisodes?.removeOnChildAttachStateChangeListener(l)
+        }
+        episodeChildAttachListener = null
         _binding = null
         super.onDestroyView()
     }
@@ -289,6 +586,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
         private const val ARG_IS_DRAMA = "is_drama"
         private const val ARG_CONTINUE_EP_ID = "continue_ep_id"
         private const val ARG_CONTINUE_EP_INDEX = "continue_ep_index"
+        private val EP_NUMBER_REGEX = Regex("(\\d+(?:\\.\\d+)?)")
 
         fun newInstance(
             seasonId: Long,

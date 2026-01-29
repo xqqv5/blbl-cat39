@@ -192,6 +192,10 @@ class AppPrefs(context: Context) {
             prefs.edit().putInt(KEY_PGC_GRID_SPAN, span.coerceIn(1, 6)).apply()
         }
 
+    var pgcEpisodeOrderReversed: Boolean
+        get() = prefs.getBoolean(KEY_PGC_EPISODE_ORDER_REVERSED, false)
+        set(value) = prefs.edit().putBoolean(KEY_PGC_EPISODE_ORDER_REVERSED, value).apply()
+
     var searchHistory: List<String>
         get() = loadStringList(KEY_SEARCH_HISTORY)
         set(value) = saveStringList(KEY_SEARCH_HISTORY, value)
@@ -297,6 +301,7 @@ class AppPrefs(context: Context) {
         private const val KEY_GRID_SPAN = "grid_span"
         private const val KEY_DYNAMIC_GRID_SPAN = "dynamic_grid_span"
         private const val KEY_PGC_GRID_SPAN = "pgc_grid_span"
+        private const val KEY_PGC_EPISODE_ORDER_REVERSED = "pgc_episode_order_reversed"
         private const val KEY_SEARCH_HISTORY = "search_history"
         private const val KEY_GAIA_VGATE_V_VOUCHER = "gaia_vgate_v_voucher"
         private const val KEY_GAIA_VGATE_V_VOUCHER_SAVED_AT_MS = "gaia_vgate_v_voucher_saved_at_ms"

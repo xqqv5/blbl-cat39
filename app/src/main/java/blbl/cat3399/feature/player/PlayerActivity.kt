@@ -216,21 +216,48 @@ class PlayerActivity : BaseActivity() {
     }
 
     private fun enqueueExitProgressReport(reason: String) {
-        if (!shouldReportProgressNow()) return
         val trace = trace
         val exo = player ?: return
-        val aid = currentAid ?: return
-        val cid = currentCid
         val progressSec = (exo.currentPosition.coerceAtLeast(0L) / 1000L)
 
-        trace?.log("report:history:enqueue", "sec=$progressSec reason=$reason")
+        val shouldHistory = shouldReportHistoryNow()
+        val shouldHeartbeat = shouldReportPgcHeartbeatNow()
+        if (!shouldHistory && !shouldHeartbeat) return
+
+        val cid = currentCid
+        val aid = currentAid
+        val epId = currentEpId
+        val seasonId = parseSeasonIdFromPlaylistSource()
+
+        if (shouldHistory && aid != null) trace?.log("report:history:enqueue", "sec=$progressSec reason=$reason")
+        if (shouldHeartbeat) trace?.log("report:heartbeat:enqueue", "sec=$progressSec reason=$reason")
         BlblApp.launchIo {
-            runCatching {
-                BiliApi.historyReport(aid = aid, cid = cid, progressSec = progressSec, platform = "android")
-            }.onSuccess {
-                trace?.log("report:history", "ok=1 sec=$progressSec reason=$reason")
-            }.onFailure {
-                trace?.log("report:history", "ok=0 sec=$progressSec reason=$reason")
+            if (shouldHistory && aid != null) {
+                runCatching {
+                    BiliApi.historyReport(aid = aid, cid = cid, progressSec = progressSec, platform = "android")
+                }.onSuccess {
+                    trace?.log("report:history", "ok=1 sec=$progressSec reason=$reason")
+                }.onFailure {
+                    trace?.log("report:history", "ok=0 sec=$progressSec reason=$reason")
+                }
+            }
+            if (shouldHeartbeat) {
+                runCatching {
+                    BiliApi.webHeartbeat(
+                        aid = aid,
+                        bvid = currentBvid,
+                        cid = cid,
+                        epId = epId,
+                        seasonId = seasonId,
+                        playedTimeSec = progressSec,
+                        type = 4,
+                        playType = 0,
+                    )
+                }.onSuccess {
+                    trace?.log("report:heartbeat", "ok=1 sec=$progressSec reason=$reason")
+                }.onFailure {
+                    trace?.log("report:heartbeat", "ok=0 sec=$progressSec reason=$reason")
+                }
             }
         }
     }
@@ -299,6 +326,7 @@ class PlayerActivity : BaseActivity() {
         val aidExtra = intent.getLongExtra(EXTRA_AID, -1L).takeIf { it > 0 }
         playlistToken = intent.getStringExtra(EXTRA_PLAYLIST_TOKEN)?.trim()?.takeIf { it.isNotBlank() }
         playlistIndex = intent.getIntExtra(EXTRA_PLAYLIST_INDEX, -1)
+        val playlistIndexExtra = playlistIndex
         playlistToken?.let { token ->
             val p = PlayerPlaylistStore.get(token)
             if (p != null && p.items.isNotEmpty()) {
@@ -308,6 +336,14 @@ class PlayerActivity : BaseActivity() {
                 playlistIndex = idx.coerceIn(0, playlistItems.lastIndex)
                 PlayerPlaylistStore.updateIndex(token, playlistIndex)
             }
+        }
+        if (epIdExtra != null) {
+            AppLog.i(
+                "Player",
+                "CONTINUE_DEBUG intentPgc bvid=${bvid.takeLast(8)} cidExtra=${cidExtra ?: -1L} epIdExtra=$epIdExtra " +
+                    "aidExtra=${aidExtra ?: -1L} token=${playlistToken?.takeLast(6).orEmpty()} " +
+                    "idxExtra=$playlistIndexExtra idxResolved=$playlistIndex src=${playlistSource.orEmpty()}",
+            )
         }
         trace =
             PlaybackTrace(
@@ -2945,7 +2981,7 @@ class PlayerActivity : BaseActivity() {
             }
     }
 
-    private fun shouldReportProgressNow(): Boolean {
+    private fun shouldReportHistoryNow(): Boolean {
         if (!BiliClient.cookies.hasSessData()) return false
         val csrf = BiliClient.cookies.getCookieValue("bili_jct").orEmpty().trim()
         if (csrf.isBlank()) return false
@@ -2956,9 +2992,32 @@ class PlayerActivity : BaseActivity() {
         return true
     }
 
+    private fun parseSeasonIdFromPlaylistSource(): Long? {
+        val src = playlistSource?.trim().orEmpty()
+        if (!src.startsWith("Bangumi:")) return null
+        return src.removePrefix("Bangumi:").trim().toLongOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun shouldReportPgcHeartbeatNow(): Boolean {
+        if (!BiliClient.cookies.hasSessData()) return false
+        val csrf = BiliClient.cookies.getCookieValue("bili_jct").orEmpty().trim()
+        if (csrf.isBlank()) return false
+        val cid = currentCid
+        if (cid <= 0L) return false
+        val epId = currentEpId ?: return false
+        if (epId <= 0L) return false
+        val hasArchiveId = (currentAid ?: 0L) > 0L || currentBvid.isNotBlank()
+        if (!hasArchiveId) return false
+        return true
+    }
+
+    private fun shouldReportAnyProgressNow(): Boolean {
+        return shouldReportHistoryNow() || shouldReportPgcHeartbeatNow()
+    }
+
     private fun startReportProgressLoop() {
         if (reportProgressJob != null) return
-        if (!shouldReportProgressNow()) return
+        if (!shouldReportAnyProgressNow()) return
         val token = reportToken
         reportProgressJob =
             lifecycleScope.launch {
@@ -2977,11 +3036,13 @@ class PlayerActivity : BaseActivity() {
     }
 
     private suspend fun reportProgressOnce(force: Boolean, reason: String) {
-        if (!shouldReportProgressNow()) return
+        if (!shouldReportAnyProgressNow()) return
         val token = reportToken
         val exo = player ?: return
-        val aid = currentAid ?: return
         val cid = currentCid
+        val aid = currentAid
+        val epId = currentEpId
+        val seasonId = parseSeasonIdFromPlaylistSource()
         val progressSec = (exo.currentPosition.coerceAtLeast(0L) / 1000L)
         if (token != reportToken) return
 
@@ -2991,14 +3052,44 @@ class PlayerActivity : BaseActivity() {
             if (progressSec == lastReportedProgressSec) return
         }
 
-        runCatching {
-            BiliApi.historyReport(aid = aid, cid = cid, progressSec = progressSec, platform = "android")
-        }.onSuccess {
+        val shouldHistory = shouldReportHistoryNow()
+        val shouldHeartbeat = shouldReportPgcHeartbeatNow()
+        var anyOk = false
+
+        if (shouldHistory && aid != null) {
+            runCatching {
+                BiliApi.historyReport(aid = aid, cid = cid, progressSec = progressSec, platform = "android")
+            }.onSuccess {
+                anyOk = true
+                trace?.log("report:history", "ok=1 sec=$progressSec reason=$reason")
+            }.onFailure {
+                trace?.log("report:history", "ok=0 sec=$progressSec reason=$reason")
+            }
+        }
+
+        if (shouldHeartbeat) {
+            runCatching {
+                BiliApi.webHeartbeat(
+                    aid = aid,
+                    bvid = currentBvid,
+                    cid = cid,
+                    epId = epId,
+                    seasonId = seasonId,
+                    playedTimeSec = progressSec,
+                    type = 4,
+                    playType = 0,
+                )
+            }.onSuccess {
+                anyOk = true
+                trace?.log("report:heartbeat", "ok=1 sec=$progressSec reason=$reason")
+            }.onFailure {
+                trace?.log("report:heartbeat", "ok=0 sec=$progressSec reason=$reason")
+            }
+        }
+
+        if (anyOk) {
             lastReportAtMs = now
             lastReportedProgressSec = progressSec
-            trace?.log("report:history", "ok=1 sec=$progressSec reason=$reason")
-        }.onFailure {
-            trace?.log("report:history", "ok=0 sec=$progressSec reason=$reason")
         }
     }
 
