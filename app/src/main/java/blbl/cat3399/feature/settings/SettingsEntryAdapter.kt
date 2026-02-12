@@ -25,7 +25,7 @@ class SettingsEntryAdapter(
                     override fun getNewListSize(): Int = list.size
 
                     override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-                        return old.getOrNull(oldItemPosition)?.title == list.getOrNull(newItemPosition)?.title
+                        return old.getOrNull(oldItemPosition)?.id == list.getOrNull(newItemPosition)?.id
                     }
 
                     override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
@@ -38,10 +38,10 @@ class SettingsEntryAdapter(
         diff.dispatchUpdatesTo(this)
     }
 
-    fun indexOfTitle(title: String): Int = items.indexOfFirst { it.title == title }
+    fun indexOfId(id: SettingId): Int = items.indexOfFirst { it.id == id }
 
     override fun getItemId(position: Int): Long {
-        return items.getOrNull(position)?.title?.hashCode()?.toLong() ?: RecyclerView.NO_ID
+        return items.getOrNull(position)?.id?.key?.hashCode()?.toLong() ?: RecyclerView.NO_ID
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {
@@ -55,7 +55,7 @@ class SettingsEntryAdapter(
 
     class Vh(private val binding: ItemSettingEntryBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: SettingEntry, onClick: (SettingEntry) -> Unit) {
-            binding.root.tag = item.title
+            binding.root.tag = item.id
             binding.tvTitle.text = item.title
             binding.tvValue.text = item.value
             if (item.desc.isNullOrBlank()) {

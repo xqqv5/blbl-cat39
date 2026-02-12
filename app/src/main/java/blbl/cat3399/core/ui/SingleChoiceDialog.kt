@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -82,9 +83,43 @@ object SingleChoiceDialog {
             val targetWidthPx = (context.resources.displayMetrics.widthPixels * 0.90f).toInt().coerceAtMost(maxWidthPx)
             dialog.window?.setLayout(targetWidthPx, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-            recycler.post {
-                applyDesiredListHeight(context, dialog, recycler, itemCount = items.size, targetWidthPx = targetWidthPx, checkedIndex = safeChecked)
-            }
+            // Ensure the checked item is visible in the very first layout pass.
+            recycler.scrollToPosition(safeChecked)
+
+            // Apply list height + focus BEFORE the first visible draw to avoid a visible "flash" and focus jump.
+            val decor = dialog.window?.decorView ?: recycler
+            decor.viewTreeObserver.addOnPreDrawListener(
+                object : ViewTreeObserver.OnPreDrawListener {
+                    private var attempts: Int = 0
+
+                    override fun onPreDraw(): Boolean {
+                        if (!decor.viewTreeObserver.isAlive) return true
+                        attempts++
+                        val ok =
+                            applyDesiredListHeight(
+                                context = context,
+                                dialog = dialog,
+                                recycler = recycler,
+                                itemCount = items.size,
+                                targetWidthPx = targetWidthPx,
+                                checkedIndex = safeChecked,
+                            )
+                        if (!ok) {
+                            // Prevent a partially-laid-out dialog from being drawn (causes a height "flash").
+                            // If something goes wrong, eventually allow drawing to avoid a hard lock.
+                            if (attempts >= 3) {
+                                decor.viewTreeObserver.removeOnPreDrawListener(this)
+                                return true
+                            }
+                            return false
+                        }
+                        decor.viewTreeObserver.removeOnPreDrawListener(this)
+
+                        // Cancel this draw, so the next traversal renders with the final height & focus.
+                        return false
+                    }
+                },
+            )
         }
         dialog.show()
     }
@@ -99,9 +134,9 @@ object SingleChoiceDialog {
         itemCount: Int,
         targetWidthPx: Int,
         checkedIndex: Int,
-    ) {
+    ): Boolean {
         val count = itemCount.coerceAtLeast(0)
-        if (count <= 0) return
+        if (count <= 0) return true
         val rows = DESIRED_VISIBLE_ROWS.coerceAtLeast(1).coerceAtMost(count)
 
         val dm = context.resources.displayMetrics
@@ -115,20 +150,7 @@ object SingleChoiceDialog {
                 ?.takeIf { it > 0 }
                 ?.let { it + (childLp?.topMargin ?: 0) + (childLp?.bottomMargin ?: 0) }
 
-        // If child is not ready yet, retry once more on the next frame.
-        if (measuredRowHeightPx == null) {
-            recycler.post {
-                applyDesiredListHeight(
-                    context = context,
-                    dialog = dialog,
-                    recycler = recycler,
-                    itemCount = itemCount,
-                    targetWidthPx = targetWidthPx,
-                    checkedIndex = checkedIndex,
-                )
-            }
-            return
-        }
+        if (measuredRowHeightPx == null) return false
 
         val rowHeightPx = measuredRowHeightPx.coerceAtLeast(1)
         val desiredListHeightPx = (rowHeightPx * rows) + recycler.paddingTop + recycler.paddingBottom
@@ -151,6 +173,7 @@ object SingleChoiceDialog {
 
         recycler.scrollToPosition(checkedIndex)
         (recycler.findViewHolderForAdapterPosition(checkedIndex)?.itemView ?: recycler.getChildAt(0))?.requestFocus()
+        return true
     }
 
     private class Adapter(

@@ -11,11 +11,19 @@ class SettingsLeftAdapter(
     private val items = ArrayList<String>()
     private var selected = 0
 
+    init {
+        setHasStableIds(true)
+    }
+
     fun submit(list: List<String>, selected: Int) {
         items.clear()
         items.addAll(list)
         this.selected = selected
         notifyDataSetChanged()
+    }
+
+    override fun getItemId(position: Int): Long {
+        return items.getOrNull(position)?.hashCode()?.toLong() ?: RecyclerView.NO_ID
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {
@@ -24,8 +32,12 @@ class SettingsLeftAdapter(
     }
 
     override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], position == selected) {
-        selected = position
-        notifyDataSetChanged()
+        val oldSelected = selected
+        if (position != oldSelected) {
+            selected = position
+            if (oldSelected in items.indices) notifyItemChanged(oldSelected)
+            notifyItemChanged(position)
+        }
         onClick(position)
     }
 
