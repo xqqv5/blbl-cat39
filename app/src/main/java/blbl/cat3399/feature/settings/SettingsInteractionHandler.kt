@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.settings
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -73,6 +74,10 @@ class SettingsInteractionHandler(
 
     fun onExportLogsSelected(uri: Uri?) {
         if (uri == null) return
+        exportLogsToTreeUri(uri)
+    }
+
+    private fun exportLogsToTreeUri(uri: Uri) {
         exportLogsJob?.cancel()
         exportLogsJob =
             activity.lifecycleScope.launch {
@@ -95,6 +100,35 @@ class SettingsInteractionHandler(
             }
     }
 
+    private fun exportLogsToLocalFile() {
+        exportLogsJob?.cancel()
+        exportLogsJob =
+            activity.lifecycleScope.launch {
+                Toast.makeText(activity, "正在导出日志到本地…", Toast.LENGTH_SHORT).show()
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        LogExporter.exportToLocalFile(activity)
+                    }
+                }.onSuccess { result ->
+                    val path = result.file.absolutePath
+                    Toast.makeText(
+                        activity,
+                        "无法选择文件夹，已导出到本地：${result.fileName}（${result.includedFiles}个文件）\n路径：$path",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }.onFailure { t ->
+                    AppLog.w("Settings", "export logs (local) failed", t)
+                    val msg = t.message?.takeIf { it.isNotBlank() } ?: "未知错误"
+                    Toast.makeText(activity, "导出失败：$msg", Toast.LENGTH_LONG).show()
+                }
+            }
+    }
+
+    private fun canOpenDocumentTree(): Boolean {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        return intent.resolveActivity(activity.packageManager) != null
+    }
+
     fun onEntryClicked(entry: SettingEntry) {
         val prefs = BiliClient.prefs
         state.pendingRestoreRightId = entry.id
@@ -115,7 +149,21 @@ class SettingsInteractionHandler(
             SettingId.GaiaVgate -> showGaiaVgateDialog(state.currentSectionIndex, entry.id)
             SettingId.ClearCache -> showClearCacheDialog(state.currentSectionIndex, entry.id)
             SettingId.ClearLogin -> showClearLoginDialog(state.currentSectionIndex, entry.id)
-            SettingId.ExportLogs -> exportLogsLauncher.launch(null)
+            SettingId.ExportLogs -> {
+                if (!canOpenDocumentTree()) {
+                    exportLogsToLocalFile()
+                    return
+                }
+                try {
+                    exportLogsLauncher.launch(null)
+                } catch (e: ActivityNotFoundException) {
+                    AppLog.w("Settings", "OpenDocumentTree not supported; fallback to local export", e)
+                    exportLogsToLocalFile()
+                } catch (t: Throwable) {
+                    AppLog.w("Settings", "open export logs picker failed; fallback to local export", t)
+                    exportLogsToLocalFile()
+                }
+            }
 
             SettingId.FullscreenEnabled -> {
                 prefs.fullscreenEnabled = !prefs.fullscreenEnabled

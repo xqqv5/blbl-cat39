@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -19,6 +20,12 @@ object LogExporter {
     data class ExportResult(
         val fileName: String,
         val uri: Uri,
+        val includedFiles: Int,
+    )
+
+    data class LocalExportResult(
+        val fileName: String,
+        val file: File,
         val includedFiles: Int,
     )
 
@@ -44,37 +51,82 @@ object LogExporter {
 
         val fileName = buildExportFileName(nowMs)
         val outUri = createZipDocument(appContext, treeUri, fileName)
-        var included = 0
-
-        appContext.contentResolver.openOutputStream(outUri, "w")?.use { rawOut ->
-            ZipOutputStream(BufferedOutputStream(rawOut, 32 * 1024)).use { zip ->
-                for (f in logFiles) {
-                    if (!f.exists() || !f.isFile) continue
-                    zip.putNextEntry(ZipEntry("logs/${f.name}"))
-                    FileInputStream(f).use { input ->
-                        input.copyTo(zip, bufferSize = 32 * 1024)
-                    }
-                    zip.closeEntry()
-                    included++
+        val included: Int =
+            appContext.contentResolver.openOutputStream(outUri, "w")?.use { rawOut ->
+                ZipOutputStream(BufferedOutputStream(rawOut, 32 * 1024)).use { zip ->
+                    writeZip(zip = zip, logFiles = logFiles, crashFile = crashFile)
                 }
-                if (crashFile != null) {
-                    zip.putNextEntry(ZipEntry("logs/${crashFile.name}"))
-                    FileInputStream(crashFile).use { input ->
-                        input.copyTo(zip, bufferSize = 32 * 1024)
-                    }
-                    zip.closeEntry()
-                    included++
-                }
-            }
-        } ?: throw IOException("无法写入导出文件")
+            } ?: throw IOException("无法写入导出文件")
 
         return ExportResult(fileName = fileName, uri = outUri, includedFiles = included)
+    }
+
+    fun exportToLocalFile(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+    ): LocalExportResult {
+        val appContext = context.applicationContext
+        val logDir = AppLog.logDir(appContext)
+        val logFiles =
+            logDir.listFiles()?.asSequence()
+                ?.filter { it.isFile && it.name.endsWith(".log") }
+                ?.sortedBy { it.lastModified() }
+                ?.toList()
+                ?: emptyList()
+
+        val crashFile = CrashTracker.crashFile(appContext).takeIf { it.exists() && it.isFile }
+
+        if (logFiles.isEmpty() && crashFile == null) {
+            throw IOException("没有可导出的日志文件")
+        }
+
+        val exportDir =
+            appContext.getExternalFilesDir("exports")
+                ?: File(appContext.filesDir, "exports")
+        runCatching { exportDir.mkdirs() }
+
+        val fileName = buildExportFileName(nowMs)
+        val outFile = createLocalZipFile(exportDir, fileName)
+        val included: Int =
+            FileOutputStream(outFile).use { rawOut ->
+                ZipOutputStream(BufferedOutputStream(rawOut, 32 * 1024)).use { zip ->
+                    writeZip(zip = zip, logFiles = logFiles, crashFile = crashFile)
+                }
+            }
+
+        return LocalExportResult(fileName = fileName, file = outFile, includedFiles = included)
     }
 
     private fun buildExportFileName(nowMs: Long): String {
         val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
         val ts = runCatching { sdf.format(Date(nowMs)) }.getOrNull() ?: nowMs.toString()
         return "blbl_logs_${ts}.zip"
+    }
+
+    private fun writeZip(
+        zip: ZipOutputStream,
+        logFiles: List<File>,
+        crashFile: File?,
+    ): Int {
+        var included = 0
+        for (f in logFiles) {
+            if (!f.exists() || !f.isFile) continue
+            zip.putNextEntry(ZipEntry("logs/${f.name}"))
+            FileInputStream(f).use { input ->
+                input.copyTo(zip, bufferSize = 32 * 1024)
+            }
+            zip.closeEntry()
+            included++
+        }
+        if (crashFile != null) {
+            zip.putNextEntry(ZipEntry("logs/${crashFile.name}"))
+            FileInputStream(crashFile).use { input ->
+                input.copyTo(zip, bufferSize = 32 * 1024)
+            }
+            zip.closeEntry()
+            included++
+        }
+        return included
     }
 
     private fun createZipDocument(context: Context, treeUri: Uri, baseName: String): Uri {
@@ -95,5 +147,19 @@ object LogExporter {
         }
         throw IOException("创建导出文件失败")
     }
-}
 
+    private fun createLocalZipFile(dir: File, baseName: String): File {
+        var attempt = 0
+        while (attempt <= 20) {
+            val name = if (attempt == 0) baseName else baseName.removeSuffix(".zip") + "_$attempt.zip"
+            val file = File(dir, name)
+            try {
+                if (file.createNewFile()) return file
+            } catch (_: Throwable) {
+                // Try a different name.
+            }
+            attempt++
+        }
+        throw IOException("创建导出文件失败")
+    }
+}
