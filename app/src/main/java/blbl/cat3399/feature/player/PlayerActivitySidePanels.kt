@@ -29,7 +29,6 @@ internal fun PlayerActivity.isCommentThreadVisible(): Boolean = binding.recycler
 internal fun PlayerActivity.isSidePanelVisible(): Boolean = isSettingsPanelVisible() || isCommentsPanelVisible()
 
 internal fun PlayerActivity.initSidePanels() {
-    binding.btnSettingsPanelBack.setOnClickListener { hideSettingsPanel() }
     binding.btnCommentsPanelBack.setOnClickListener { onCommentsBackPressed() }
 
     binding.chipCommentSortHot.setOnClickListener { applyCommentSort(COMMENT_SORT_HOT) }
@@ -110,8 +109,10 @@ internal fun PlayerActivity.toggleSettingsPanel() {
 
 internal fun PlayerActivity.showSettingsPanel() {
     binding.commentsPanel.visibility = View.GONE
-    binding.settingsPanel.visibility = View.VISIBLE
+    // Make sure OSD (top/bottom bars) is visible first, so the panel height stays stable
+    // even if it relies on constraints to those bars.
     setControlsVisible(true)
+    binding.settingsPanel.visibility = View.VISIBLE
     focusSettingsPanel()
 }
 

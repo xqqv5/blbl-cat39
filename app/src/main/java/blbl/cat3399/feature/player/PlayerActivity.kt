@@ -775,15 +775,17 @@ class PlayerActivity : BaseActivity() {
 
                         when (keyCode) {
                             KeyEvent.KEYCODE_DPAD_UP -> {
-                                if (pos == 0 && !binding.recyclerSettings.canScrollVertically(-1)) return@setOnKeyListener true
+                                if (pos == 0) return@setOnKeyListener true
                                 false
                             }
 
                             KeyEvent.KEYCODE_DPAD_DOWN -> {
                                 val last = (binding.recyclerSettings.adapter?.itemCount ?: 0) - 1
-                                if (pos == last && !binding.recyclerSettings.canScrollVertically(1)) return@setOnKeyListener true
+                                if (pos == last) return@setOnKeyListener true
                                 false
                             }
+
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> true
 
                             else -> false
                         }
