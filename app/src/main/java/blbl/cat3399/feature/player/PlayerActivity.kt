@@ -115,6 +115,8 @@ class PlayerActivity : BaseActivity() {
     internal var coinActionJob: kotlinx.coroutines.Job? = null
     internal var favDialogJob: kotlinx.coroutines.Job? = null
     internal var favApplyJob: kotlinx.coroutines.Job? = null
+    internal var socialStateFetchJob: kotlinx.coroutines.Job? = null
+    internal var socialStateFetchToken: Int = 0
 
     internal var commentSort: Int = COMMENT_SORT_HOT
     internal var commentsFetchJob: kotlinx.coroutines.Job? = null

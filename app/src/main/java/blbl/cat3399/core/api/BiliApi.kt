@@ -554,6 +554,21 @@ object BiliApi {
         delMediaIds: List<Long>,
     ) = VideoApi.favResourceDeal(rid = rid, addMediaIds = addMediaIds, delMediaIds = delMediaIds)
 
+    suspend fun archiveHasLike(
+        bvid: String? = null,
+        aid: Long? = null,
+    ) = VideoApi.archiveHasLike(bvid = bvid, aid = aid)
+
+    suspend fun archiveCoins(
+        bvid: String? = null,
+        aid: Long? = null,
+    ) = VideoApi.archiveCoins(bvid = bvid, aid = aid)
+
+    suspend fun archiveFavoured(
+        bvid: String? = null,
+        aid: Long? = null,
+    ) = VideoApi.archiveFavoured(bvid = bvid, aid = aid)
+
     suspend fun archiveLike(
         bvid: String? = null,
         aid: Long? = null,

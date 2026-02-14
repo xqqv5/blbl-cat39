@@ -334,6 +334,114 @@ internal object VideoApi {
         }
     }
 
+    suspend fun archiveHasLike(
+        bvid: String? = null,
+        aid: Long? = null,
+    ): Boolean {
+        val safeBvid = bvid?.trim().orEmpty()
+        val safeAid = aid?.takeIf { it > 0L }
+        if (safeBvid.isBlank() && safeAid == null) throw BiliApiException(apiCode = -400, apiMessage = "missing_video_id")
+
+        WebCookieMaintainer.ensureWebFingerprintCookies()
+
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/web-interface/archive/has/like",
+                buildMap {
+                    if (safeBvid.isNotBlank()) put("bvid", safeBvid) else put("aid", safeAid.toString())
+                },
+            )
+        val json =
+            BiliClient.getJson(
+                url,
+                headers = BiliApi.piliWebHeaders(targetUrl = url, includeCookie = true),
+                noCookies = true,
+            )
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+
+        val any = json.opt("data")
+        val value =
+            when (any) {
+                is Number -> any.toInt()
+                is String -> any.trim().toIntOrNull() ?: 0
+                else -> json.optInt("data", 0)
+            }
+        return value == 1
+    }
+
+    suspend fun archiveCoins(
+        bvid: String? = null,
+        aid: Long? = null,
+    ): Int {
+        val safeBvid = bvid?.trim().orEmpty()
+        val safeAid = aid?.takeIf { it > 0L }
+        if (safeBvid.isBlank() && safeAid == null) throw BiliApiException(apiCode = -400, apiMessage = "missing_video_id")
+
+        WebCookieMaintainer.ensureWebFingerprintCookies()
+
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/web-interface/archive/coins",
+                buildMap {
+                    if (safeBvid.isNotBlank()) put("bvid", safeBvid) else put("aid", safeAid.toString())
+                },
+            )
+        val json =
+            BiliClient.getJson(
+                url,
+                headers = BiliApi.piliWebHeaders(targetUrl = url, includeCookie = true),
+                noCookies = true,
+            )
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return data.optInt("multiply", 0).coerceAtLeast(0)
+    }
+
+    suspend fun archiveFavoured(
+        bvid: String? = null,
+        aid: Long? = null,
+    ): Boolean {
+        val safeBvid = bvid?.trim().orEmpty()
+        val safeAid = aid?.takeIf { it > 0L }
+        val id =
+            when {
+                safeBvid.isNotBlank() -> safeBvid
+                safeAid != null -> safeAid.toString()
+                else -> throw BiliApiException(apiCode = -400, apiMessage = "missing_video_id")
+            }
+
+        WebCookieMaintainer.ensureWebFingerprintCookies()
+
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/v2/fav/video/favoured",
+                mapOf("aid" to id),
+            )
+        val json =
+            BiliClient.getJson(
+                url,
+                headers = BiliApi.piliWebHeaders(targetUrl = url, includeCookie = true),
+                noCookies = true,
+            )
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+
+        val data = json.optJSONObject("data") ?: JSONObject()
+        return data.optBoolean("favoured", false)
+    }
+
     suspend fun coinAdd(
         bvid: String? = null,
         aid: Long? = null,

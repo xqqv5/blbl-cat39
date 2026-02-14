@@ -51,6 +51,9 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(exo: ExoPlayer) {
     favDialogJob = null
     favApplyJob?.cancel()
     favApplyJob = null
+    socialStateFetchJob?.cancel()
+    socialStateFetchJob = null
+    socialStateFetchToken++
     actionLiked = false
     actionCoinCount = 0
     actionFavored = false
@@ -222,6 +225,7 @@ internal fun PlayerActivity.startPlayback(
                 val aid = viewData.optLong("aid").takeIf { it > 0 }
                 currentAid = currentAid ?: aid ?: safeAid
                 currentCid = cid
+                refreshActionButtonStatesFromServer(bvid = resolvedBvid, aid = currentAid)
                 if (isCommentsPanelVisible() && !isCommentThreadVisible()) ensureCommentsLoaded()
                 AppLog.i("Player", "start bvid=$resolvedBvid cid=$cid")
                 trace?.log("cid:resolved", "cid=$cid aid=${aid ?: -1}")

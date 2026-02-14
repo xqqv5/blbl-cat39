@@ -12,6 +12,8 @@ import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import blbl.cat3399.core.model.VideoCard
@@ -52,6 +54,81 @@ internal fun PlayerActivity.updateFavButtonUi() {
     binding.btnFav.imageTintList = ContextCompat.getColorStateList(this, colorRes)
     binding.btnFav.isEnabled = true
     binding.btnFav.alpha = 1.0f
+}
+
+internal fun PlayerActivity.refreshActionButtonStatesFromServer(
+    bvid: String,
+    aid: Long?,
+) {
+    val enabled = BiliClient.prefs.playerActionButtons.toSet()
+    if (
+        !enabled.contains(AppPrefs.PLAYER_ACTION_BTN_LIKE) &&
+        !enabled.contains(AppPrefs.PLAYER_ACTION_BTN_COIN) &&
+        !enabled.contains(AppPrefs.PLAYER_ACTION_BTN_FAV)
+    ) {
+        return
+    }
+
+    if (!BiliClient.cookies.hasSessData()) return
+    val requestBvid = bvid.trim().takeIf { it.isNotBlank() } ?: return
+    val requestAid = aid?.takeIf { it > 0L }
+
+    socialStateFetchJob?.cancel()
+    val token = ++socialStateFetchToken
+    val baselineLiked = actionLiked
+    val baselineCoinCount = actionCoinCount
+    val baselineFavored = actionFavored
+
+    socialStateFetchJob =
+        lifecycleScope.launch {
+            try {
+                val (liked, coins, favoured) =
+                    withContext(Dispatchers.IO) {
+                        coroutineScope {
+                            val likedJob =
+                                async {
+                                    runCatching { BiliApi.archiveHasLike(bvid = requestBvid, aid = requestAid) }.getOrNull()
+                                }
+                            val coinsJob =
+                                async {
+                                    runCatching { BiliApi.archiveCoins(bvid = requestBvid, aid = requestAid) }.getOrNull()
+                                }
+                            val favouredJob =
+                                async {
+                                    runCatching { BiliApi.archiveFavoured(bvid = requestBvid, aid = requestAid) }.getOrNull()
+                                }
+                            Triple(likedJob.await(), coinsJob.await(), favouredJob.await())
+                        }
+                    }
+
+                if (token != socialStateFetchToken) return@launch
+                if (currentBvid != requestBvid) return@launch
+                if (requestAid != null && currentAid != requestAid) return@launch
+
+                var changed = false
+                liked?.let { value ->
+                    if (likeActionJob?.isActive != true && actionLiked == baselineLiked) {
+                        actionLiked = value
+                        changed = true
+                    }
+                }
+                coins?.let { value ->
+                    if (coinActionJob?.isActive != true && actionCoinCount == baselineCoinCount) {
+                        actionCoinCount = value.coerceIn(0, 2)
+                        changed = true
+                    }
+                }
+                favoured?.let { value ->
+                    if (favDialogJob?.isActive != true && favApplyJob?.isActive != true && actionFavored == baselineFavored) {
+                        actionFavored = value
+                        changed = true
+                    }
+                }
+                if (changed) updateActionButtonsUi()
+            } finally {
+                if (token == socialStateFetchToken) socialStateFetchJob = null
+            }
+        }
 }
 
 internal fun PlayerActivity.onLikeButtonClicked() {
